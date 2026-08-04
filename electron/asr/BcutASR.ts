@@ -54,14 +54,20 @@ export class BcutASR extends BaseASR {
     })
 
     // 1. 申请上传
-    const reqResp = await fetch(API_REQ_UPLOAD, {
-      method: 'POST',
-      headers: HEADERS,
-      body: payload
-    })
-    if (!reqResp.ok) throw new Error(`Upload request failed: ${reqResp.status}`)
+    let reqResp: any
+    try {
+      reqResp = await fetch(API_REQ_UPLOAD, {
+        method: 'POST',
+        headers: HEADERS,
+        body: payload
+      })
+    } catch (e: any) {
+      throw new Error(`Bcut 上传请求网络失败: ${e.message}`)
+    }
+    if (!reqResp.ok) throw new Error(`Bcut 上传申请被拒 (HTTP ${reqResp.status})`)
     const reqData: UploadResponse = await reqResp.json()
     const respData = reqData.data
+    if (!respData?.upload_urls?.length) throw new Error('Bcut 返回数据异常: ' + JSON.stringify(reqData).substring(0, 100))
 
     this.inBossKey = respData.in_boss_key
     this.resourceId = respData.resource_id
@@ -79,14 +85,18 @@ export class BcutASR extends BaseASR {
       const chunk = this.fileBinary.subarray(startRange, endRange)
 
       console.log(`[BcutASR] 上传分片${clip}: ${startRange}-${endRange}`)
-      const resp = await fetch(this.uploadUrls[clip], {
-        method: 'PUT',
-        headers: HEADERS,
-        body: new Uint8Array(chunk)
-      })
-      if (!resp.ok) throw new Error(`Chunk upload failed: ${resp.status}`)
-      const etag = resp.headers.get('Etag') || ''
-      this.etags.push(etag)
+      try {
+        const resp = await fetch(this.uploadUrls[clip], {
+          method: 'PUT',
+          headers: HEADERS,
+          body: new Uint8Array(chunk)
+        })
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        const etag = resp.headers.get('Etag') || ''
+        this.etags.push(etag)
+      } catch (e: any) {
+        throw new Error(`Bcut 分片${clip}上传失败: ${e.message}`)
+      }
     }
 
     // 3. 提交上传
@@ -98,15 +108,19 @@ export class BcutASR extends BaseASR {
       model_id: '8'
     })
 
-    const commitResp = await fetch(API_COMMIT_UPLOAD, {
-      method: 'POST',
-      headers: HEADERS,
-      body: commitData
-    })
-    if (!commitResp.ok) throw new Error(`Commit failed: ${commitResp.status}`)
-    const commitJson = await commitResp.json()
-    this.downloadUrl = commitJson.data.download_url
-    console.log('[BcutASR] 提交成功')
+    try {
+      const commitResp = await fetch(API_COMMIT_UPLOAD, {
+        method: 'POST',
+        headers: HEADERS,
+        body: commitData
+      })
+      if (!commitResp.ok) throw new Error(`HTTP ${commitResp.status}`)
+      const commitJson = await commitResp.json()
+      this.downloadUrl = commitJson.data.download_url
+      console.log('[BcutASR] 提交成功')
+    } catch (e: any) {
+      throw new Error(`Bcut 提交上传失败: ${e.message}`)
+    }
   }
 
   private async createTask(): Promise<string> {
