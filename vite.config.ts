@@ -11,6 +11,14 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
+        vite: {
+          define: {
+            // 许可证密钥：构建时注入，不提交到 Git
+            'process.env.VIDEOBOX_LICENSE_SECRET': JSON.stringify(
+              process.env.VIDEOBOX_LICENSE_SECRET || 'videobox-dev-secret-placeholder'
+            ),
+          },
+        },
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.

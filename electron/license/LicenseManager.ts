@@ -423,8 +423,8 @@ export class LicenseManager {
     if (code !== 'PRO' && code !== 'PRE') {
       return { valid: false, reason: '类型无效' }
     }
-    // 本地签名校验
-    const SECRET = 'videobox-2026-gold-key-secret'
+    // 密钥从环境变量注入，构建时通过 Vite define 替换
+    const SECRET = process.env.VIDEOBOX_LICENSE_SECRET || 'videobox-dev-secret-placeholder'
     const payload = `${seg1}-${seg2}-${seg3}-${seg4}-${code}-${SECRET}`
     const expected = crypto.createHash('sha256').update(payload).digest('hex').substring(0, 8).toUpperCase()
     if (sig !== expected) {

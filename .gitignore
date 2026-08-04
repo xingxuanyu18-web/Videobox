@@ -46,6 +46,9 @@ coverage/
 .env.local
 .env.*.local
 
+# License key generator (keep out of public repo)
+scripts/generate-key.py
+
 # Binary files (yt-dlp and ffmpeg should be downloaded by users or CI)
 *.exe
 *.dll
