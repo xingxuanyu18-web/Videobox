@@ -7,7 +7,7 @@
   "author": "Videobox Team",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && electron-builder",
+    "build": "vite build && electron-builder --win -p always",
     "preview": "vite preview"
   },
   "dependencies": {

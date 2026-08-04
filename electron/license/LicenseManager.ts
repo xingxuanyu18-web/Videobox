@@ -1,6 +1,13 @@
 /**
  * LicenseManager - 许可证管理核心
- * 管理用户等级、激活验证、许可证持久化
+ *
+ * Phase 1 Upgrade:
+ *   - 激活验证改为服务端优先（移除客户端签名校验）
+ *   - 强化机器码：MAC + 硬盘序列号 + 用户名
+ *   - PBKDF2 加密许可证文件 + 安装级随机盐
+ *   - 多设备支持：maxDevices 字段
+ *   - 7 天离线宽限期
+ *   - Pro 也需要定期在线验证
  */
 
 import * as fs from 'fs'
@@ -8,16 +15,18 @@ import * as path from 'path'
 import * as crypto from 'crypto'
 import * as os from 'os'
 
-// ==================== 类型定义 ====================
-
 export type UserTier = 'trial' | 'free' | 'pro' | 'premium'
 
 export interface LicenseInfo {
   tier: UserTier
-  activatedAt: string       // ISO date string
-  expiresAt: string | null  // null = 永久 (Pro), string = 订阅到期日
+  activatedAt: string
+  expiresAt: string | null
   machineId: string
   licenseKey: string | null
+  maxDevices: number
+  deviceLabel: string
+  serverVerified: boolean
+  lastVerifiedAt: string | null
 }
 
 export interface TrialInfo {
@@ -30,26 +39,57 @@ export interface TrialInfo {
 }
 
 export interface DailyUsage {
-  date: string        // YYYY-MM-DD
+  date: string
   downloads: number
   asrProcessings: number
 }
 
-// ==================== 配置 ====================
+export interface DeviceInfo {
+  machineId: string
+  activatedAt: string
+  label: string
+}
 
 const TRIAL_DOWNLOAD_LIMIT = 5
 const TRIAL_ASR_LIMIT = 5
 const FREE_DAILY_DOWNLOADS = 3
 const FREE_DAILY_ASR = 3
-
-// ==================== 工具函数 ====================
+const OFFLINE_GRACE_DAYS = 7
 
 function getMachineId(): string {
-  const hostname = os.hostname()
-  const cpus = os.cpus()
-  const cpuModel = cpus[0]?.model || 'unknown'
-  const raw = `${hostname}-${cpuModel}-${os.platform()}-${os.arch()}`
-  return crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16)
+  const components: string[] = []
+  components.push(os.hostname())
+  components.push(os.platform(), os.arch())
+  try {
+    const nets = os.networkInterfaces()
+    for (const name of Object.keys(nets)) {
+      const iface = nets[name]?.find(
+        (n) => !n.internal && n.mac !== '00:00:00:00:00:00'
+      )
+      if (iface) { components.push(iface.mac); break }
+    }
+  } catch { /* degrade */ }
+  try {
+    if (os.platform() === 'win32') {
+      const { execSync } = require('child_process')
+      const result = execSync('wmic diskdrive get serialnumber', { timeout: 5000 }).toString()
+      const serial = result.split('\n')[1]?.trim()
+      if (serial) components.push(serial)
+    }
+  } catch { /* degrade */ }
+  try { components.push(os.userInfo().username) } catch { /* degrade */ }
+  const fingerprint = components.filter(Boolean).join('|') + '|videobox-v2-salt'
+  return crypto.createHash('sha256').update(fingerprint).digest('hex').substring(0, 32)
+}
+
+function getInstallSalt(userDataPath: string): string {
+  const saltPath = path.join(userDataPath, '.install_salt')
+  if (fs.existsSync(saltPath)) {
+    return fs.readFileSync(saltPath, 'utf-8')
+  }
+  const salt = crypto.randomBytes(32).toString('hex')
+  fs.writeFileSync(saltPath, salt, 'utf-8')
+  return salt
 }
 
 function encryptData(data: Record<string, unknown>, key: Buffer): string {
@@ -70,13 +110,6 @@ function decryptData(encrypted: string, key: Buffer): Record<string, unknown> {
   return JSON.parse(decrypted)
 }
 
-function getEncryptionKey(): Buffer {
-  const raw = getMachineId() + 'videobox-license-salt-2024'
-  return crypto.createHash('sha256').update(raw).digest()
-}
-
-// ==================== LicenseManager ====================
-
 export class LicenseManager {
   private userDataPath: string
   private licensePath: string
@@ -86,7 +119,7 @@ export class LicenseManager {
   private currentTrial: TrialInfo | null = null
   private todayUsage: DailyUsage | null = null
 
-  // 激活服务器 URL
+  // 部署后改为你的真实域名，如 'https://api.videobox.app/api'
   static ACTIVATION_SERVER = 'http://localhost:8788/api'
 
   constructor(userDataPath: string) {
@@ -94,62 +127,86 @@ export class LicenseManager {
     this.licensePath = path.join(userDataPath, 'license.dat')
     this.trialPath = path.join(userDataPath, 'trial.dat')
     this.dailyUsagePath = path.join(userDataPath, 'daily_usage.json')
-
-    // 确保目录存在
     if (!fs.existsSync(userDataPath)) {
       fs.mkdirSync(userDataPath, { recursive: true })
     }
-
     this.load()
   }
 
-  // ==================== 加载/保存 ====================
+  private getEncryptionKey(): Buffer {
+    const raw = getMachineId() + getInstallSalt(this.userDataPath) + 'videobox-license-salt-v2'
+    return crypto.pbkdf2Sync(raw, 'videobox-pbkdf2-salt-v2', 100000, 32, 'sha256')
+  }
 
   private load(): void {
-    // 加载许可证
     if (fs.existsSync(this.licensePath)) {
       try {
         const encrypted = fs.readFileSync(this.licensePath, 'utf-8')
-        const key = getEncryptionKey()
-        const data = decryptData(encrypted, key) as unknown as LicenseInfo
-        if (data.machineId === getMachineId()) {
-          this.currentLicense = data
+        const key = this.getEncryptionKey()
+        const data = decryptData(encrypted, key)
+        const currentId = getMachineId()
+        if (data.machineId === currentId || (data as any).machineId === currentId.substring(0, 16)) {
+          this.currentLicense = {
+            tier: (data as any).tier || 'free',
+            activatedAt: (data as any).activatedAt || new Date().toISOString(),
+            expiresAt: (data as any).expiresAt || null,
+            machineId: currentId,
+            licenseKey: (data as any).licenseKey || null,
+            maxDevices: (data as any).maxDevices || 1,
+            deviceLabel: (data as any).deviceLabel || '',
+            serverVerified: (data as any).serverVerified !== false,
+            lastVerifiedAt: (data as any).lastVerifiedAt || null,
+          }
         }
       } catch {
-        this.currentLicense = null
+        try {
+          const encrypted = fs.readFileSync(this.licensePath, 'utf-8')
+          const oldKey = crypto.createHash('sha256')
+            .update(getMachineId().substring(0, 16) + 'videobox-license-salt-2024')
+            .digest()
+          const data = decryptData(encrypted, oldKey)
+          if (data.machineId === getMachineId().substring(0, 16)) {
+            this.currentLicense = {
+              tier: (data as any).tier || 'free',
+              activatedAt: (data as any).activatedAt || new Date().toISOString(),
+              expiresAt: (data as any).expiresAt || null,
+              machineId: getMachineId(),
+              licenseKey: (data as any).licenseKey || null,
+              maxDevices: (data as any).maxDevices || 1,
+              deviceLabel: '',
+              serverVerified: true,
+              lastVerifiedAt: null,
+            }
+            this.saveLicense()
+          }
+        } catch { this.currentLicense = null }
       }
     }
-
-    // 加载试用信息
     if (fs.existsSync(this.trialPath)) {
       try {
         const encrypted = fs.readFileSync(this.trialPath, 'utf-8')
-        const key = getEncryptionKey()
+        const key = this.getEncryptionKey()
         this.currentTrial = decryptData(encrypted, key) as unknown as TrialInfo
       } catch {
-        this.currentTrial = null
+        try {
+          const encrypted = fs.readFileSync(this.trialPath, 'utf-8')
+          const oldKey = crypto.createHash('sha256')
+            .update(getMachineId().substring(0, 16) + 'videobox-license-salt-2024')
+            .digest()
+          this.currentTrial = decryptData(encrypted, oldKey) as unknown as TrialInfo
+          this.saveTrial()
+        } catch { this.currentTrial = null }
       }
     }
-
-    // 加载每日使用量
     if (fs.existsSync(this.dailyUsagePath)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(this.dailyUsagePath, 'utf-8'))
-        this.todayUsage = data
-      } catch {
-        this.todayUsage = null
-      }
+      try { this.todayUsage = JSON.parse(fs.readFileSync(this.dailyUsagePath, 'utf-8')) }
+      catch { this.todayUsage = null }
     }
-
-    // 初始化试用
     if (!this.currentTrial) {
       this.currentTrial = {
-        machineId: getMachineId(),
-        firstSeenAt: new Date().toISOString(),
-        downloadsUsed: 0,
-        asrUsed: 0,
-        totalDownloadLimit: TRIAL_DOWNLOAD_LIMIT,
-        totalAsrLimit: TRIAL_ASR_LIMIT
+        machineId: getMachineId(), firstSeenAt: new Date().toISOString(),
+        downloadsUsed: 0, asrUsed: 0,
+        totalDownloadLimit: TRIAL_DOWNLOAD_LIMIT, totalAsrLimit: TRIAL_ASR_LIMIT,
       }
       this.saveTrial()
     }
@@ -157,14 +214,14 @@ export class LicenseManager {
 
   private saveLicense(): void {
     if (!this.currentLicense) return
-    const key = getEncryptionKey()
+    const key = this.getEncryptionKey()
     const encrypted = encryptData(this.currentLicense as unknown as Record<string, unknown>, key)
     fs.writeFileSync(this.licensePath, encrypted, 'utf-8')
   }
 
   private saveTrial(): void {
     if (!this.currentTrial) return
-    const key = getEncryptionKey()
+    const key = this.getEncryptionKey()
     const encrypted = encryptData(this.currentTrial as unknown as Record<string, unknown>, key)
     fs.writeFileSync(this.trialPath, encrypted, 'utf-8')
   }
@@ -173,48 +230,30 @@ export class LicenseManager {
     fs.writeFileSync(this.dailyUsagePath, JSON.stringify(this.todayUsage, null, 2), 'utf-8')
   }
 
-  // ==================== 许可证状态查询 ====================
-
   getTier(): UserTier {
-    // 1. 如果有有效许可证，返回对应等级
     if (this.currentLicense) {
       if (this.currentLicense.tier === 'premium' && this.currentLicense.expiresAt) {
-        const now = new Date()
-        const expires = new Date(this.currentLicense.expiresAt)
-        if (now < expires) return 'premium'
-        // 过期，降级
-        this.currentLicense = null
-        this.saveLicense()
+        if (new Date() < new Date(this.currentLicense.expiresAt)) return 'premium'
+        this.currentLicense = null; this.saveLicense()
       } else if (this.currentLicense.tier === 'pro') {
         return 'pro'
       }
     }
-
-    // 2. 检查试用
     if (this.currentTrial) {
-      const remaining = this.getRemainingTrial()
-      if (remaining.downloads > 0 || remaining.asr > 0) {
-        return 'trial'
-      }
+      const r = this.getRemainingTrial()
+      if (r.downloads > 0 || r.asr > 0) return 'trial'
     }
-
-    // 3. 免费版
     return 'free'
   }
 
-  getLicenseInfo(): LicenseInfo | null {
-    return this.currentLicense
-  }
-
-  getTrialInfo(): TrialInfo | null {
-    return this.currentTrial
-  }
+  getLicenseInfo(): LicenseInfo | null { return this.currentLicense }
+  getTrialInfo(): TrialInfo | null { return this.currentTrial }
 
   getRemainingTrial(): { downloads: number; asr: number } {
     if (!this.currentTrial) return { downloads: 0, asr: 0 }
     return {
       downloads: Math.max(0, this.currentTrial.totalDownloadLimit - this.currentTrial.downloadsUsed),
-      asr: Math.max(0, this.currentTrial.totalAsrLimit - this.currentTrial.asrUsed)
+      asr: Math.max(0, this.currentTrial.totalAsrLimit - this.currentTrial.asrUsed),
     }
   }
 
@@ -223,39 +262,22 @@ export class LicenseManager {
     return r.downloads <= 0 && r.asr <= 0
   }
 
-  // ==================== 功能权限检查 ====================
-
-  canDownloadFullQuality(): boolean {
-    return ['trial', 'pro', 'premium'].includes(this.getTier())
-  }
-
-  canUseAllEngines(): boolean {
-    return ['trial', 'pro', 'premium'].includes(this.getTier())
-  }
-
-  canBatchProcess(): boolean {
-    return ['trial', 'pro', 'premium'].includes(this.getTier())
-  }
+  canDownloadFullQuality(): boolean { return ['trial', 'pro', 'premium'].includes(this.getTier()) }
+  canUseAllEngines(): boolean { return ['trial', 'pro', 'premium'].includes(this.getTier()) }
+  canBatchProcess(): boolean { return ['trial', 'pro', 'premium'].includes(this.getTier()) }
 
   getExportFormats(): string[] {
-    const tier = this.getTier()
-    if (tier === 'free') return ['SRT']
-    return ['SRT', 'TXT', 'ASS']
+    return this.getTier() === 'free' ? ['SRT'] : ['SRT', 'TXT', 'ASS']
   }
 
   getAvailableAsrEngines(): string[] {
-    const tier = this.getTier()
-    if (tier === 'free') return ['Bcut']
-    return ['Bcut', 'JianYing', 'KuaiShou']
+    return this.getTier() === 'free' ? ['Bcut'] : ['Bcut', 'JianYing', 'KuaiShou']
   }
 
   getDailyLimit(): number | null {
     const tier = this.getTier()
-    if (tier === 'pro' || tier === 'premium') return null // 无限
-    return FREE_DAILY_DOWNLOADS
+    return (tier === 'pro' || tier === 'premium') ? null : FREE_DAILY_DOWNLOADS
   }
-
-  // ==================== 使用量跟踪 ====================
 
   private getTodayKey(): string {
     return new Date().toISOString().split('T')[0]
@@ -272,52 +294,32 @@ export class LicenseManager {
   canDownloadToday(): boolean {
     const tier = this.getTier()
     this.ensureTodayUsage()
-
-    if (tier === 'trial') {
-      const r = this.getRemainingTrial()
-      return r.downloads > 0
-    }
+    if (tier === 'trial') return this.getRemainingTrial().downloads > 0
     if (tier === 'pro' || tier === 'premium') return true
-
-    // Free
     return (this.todayUsage?.downloads || 0) < FREE_DAILY_DOWNLOADS
   }
 
   canProcessAsrToday(): boolean {
     const tier = this.getTier()
     this.ensureTodayUsage()
-
-    if (tier === 'trial') {
-      const r = this.getRemainingTrial()
-      return r.asr > 0
-    }
+    if (tier === 'trial') return this.getRemainingTrial().asr > 0
     if (tier === 'pro' || tier === 'premium') return true
-
-    // Free
     return (this.todayUsage?.asrProcessings || 0) < FREE_DAILY_ASR
   }
 
   recordDownload(): void {
     this.ensureTodayUsage()
-    if (this.todayUsage) {
-      this.todayUsage.downloads++
-      this.saveDailyUsage()
-    }
+    if (this.todayUsage) { this.todayUsage.downloads++; this.saveDailyUsage() }
     if (this.currentTrial && this.getTier() === 'trial') {
-      this.currentTrial.downloadsUsed++
-      this.saveTrial()
+      this.currentTrial.downloadsUsed++; this.saveTrial()
     }
   }
 
   recordAsrProcessing(): void {
     this.ensureTodayUsage()
-    if (this.todayUsage) {
-      this.todayUsage.asrProcessings++
-      this.saveDailyUsage()
-    }
+    if (this.todayUsage) { this.todayUsage.asrProcessings++; this.saveDailyUsage() }
     if (this.currentTrial && this.getTier() === 'trial') {
-      this.currentTrial.asrUsed++
-      this.saveTrial()
+      this.currentTrial.asrUsed++; this.saveTrial()
     }
   }
 
@@ -326,111 +328,134 @@ export class LicenseManager {
     return {
       downloads: this.todayUsage?.downloads || 0,
       asrProcessings: this.todayUsage?.asrProcessings || 0,
-      limit: this.getDailyLimit()
+      limit: this.getDailyLimit(),
     }
   }
 
-  // ==================== 激活 ====================
+  static isValidKeyFormat(key: string): boolean {
+    return /^VB-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-(PRO|PRE)-[A-F0-9]{8}$/i.test(key.trim())
+  }
 
-  async activate(licenseKey: string): Promise<{ success: boolean; tier?: UserTier; message: string }> {
+  static tierFromKey(key: string): UserTier | null {
+    const parts = key.trim().toUpperCase().split('-')
+    if (parts.length === 7 && parts[5] === 'PRO') return 'pro'
+    if (parts.length === 7 && parts[5] === 'PRE') return 'premium'
+    return null
+  }
+
+  async activate(licenseKey: string, deviceLabel?: string): Promise<{ success: boolean; tier?: UserTier; message: string }> {
     const machineId = getMachineId()
-
-    // 1. 先尝试本地离线验证
-    const localResult = this.verifyLocal(licenseKey)
-    if (localResult.valid && localResult.tier) {
-      this.currentLicense = {
-        tier: localResult.tier,
-        activatedAt: new Date().toISOString(),
-        expiresAt: null, // 本地验证默认永久
-        machineId,
-        licenseKey
-      }
-      this.saveLicense()
-      const tierLabel = localResult.tier === 'pro' ? 'Pro 买断版' : 'Premium 订阅版'
-      return { success: true, tier: localResult.tier, message: `激活成功！已解锁 ${tierLabel}` }
+    if (!LicenseManager.isValidKeyFormat(licenseKey)) {
+      return { success: false, message: '激活码格式无效' }
     }
-    if (localResult.reason && localResult.reason !== '格式无效' && localResult.reason !== '类型无效') {
-      return { success: false, message: localResult.reason }
-    }
-
-    // 2. 本地验证失败，尝试服务器验证
     try {
       const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: licenseKey, machineId })
+        body: JSON.stringify({ key: licenseKey.trim(), machineId, deviceLabel }),
       })
       const data = await resp.json()
       if (!data.success) {
-        return { success: false, message: data.message || '激活码无效' }
+        return { success: false, message: data.message || '激活失败' }
       }
       this.currentLicense = {
         tier: data.tier,
         activatedAt: new Date().toISOString(),
         expiresAt: data.expiresAt || null,
         machineId,
-        licenseKey
+        licenseKey: licenseKey.trim().toUpperCase(),
+        maxDevices: data.maxDevices || 1,
+        deviceLabel: deviceLabel || '',
+        serverVerified: true,
+        lastVerifiedAt: new Date().toISOString(),
       }
       this.saveLicense()
-      return { success: true, tier: data.tier, message: `激活成功！等级: ${data.tier}` }
-    } catch (e) {
-      return { success: false, message: '无法连接服务器，请检查输入是否正确' }
+      const label = data.tier === 'pro' ? 'Pro 买断版' : 'Premium 订阅版'
+      return { success: true, tier: data.tier, message: `激活成功！${label}` }
+    } catch {
+      if (this.currentLicense) {
+        return { success: true, tier: this.currentLicense.tier, message: '无法连接服务器，使用缓存许可证' }
+      }
+      return { success: false, message: '无法连接激活服务器，请检查网络后重试' }
     }
   }
 
   async verifyOnline(): Promise<boolean> {
-    if (!this.currentLicense) return false
-    if (this.currentLicense.tier === 'pro') return true
-    // Premium 订阅需要定期验证
+    if (!this.currentLicense?.licenseKey) return false
     try {
       const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          machineId: getMachineId(),
-          licenseKey: this.currentLicense.licenseKey
-        })
+        body: JSON.stringify({ machineId: getMachineId(), licenseKey: this.currentLicense.licenseKey }),
       })
       const data = await resp.json()
       if (!data.valid) {
-        this.currentLicense = null
-        this.saveLicense()
+        if (this.currentLicense.lastVerifiedAt) {
+          const lastCheck = new Date(this.currentLicense.lastVerifiedAt)
+          const grace = new Date(); grace.setDate(grace.getDate() - OFFLINE_GRACE_DAYS)
+          if (lastCheck > grace) return true
+        }
+        this.currentLicense = null; this.saveLicense()
         return false
       }
-      if (data.expiresAt) {
-        this.currentLicense.expiresAt = data.expiresAt
-        this.saveLicense()
-      }
+      this.currentLicense.serverVerified = true
+      this.currentLicense.lastVerifiedAt = new Date().toISOString()
+      if (data.expiresAt) this.currentLicense.expiresAt = data.expiresAt
+      if (data.maxDevices) this.currentLicense.maxDevices = data.maxDevices
+      this.saveLicense()
       return true
     } catch {
+      if (this.currentLicense.lastVerifiedAt) {
+        const lastCheck = new Date(this.currentLicense.lastVerifiedAt)
+        const grace = new Date(); grace.setDate(grace.getDate() - OFFLINE_GRACE_DAYS)
+        return lastCheck > grace
+      }
       if (this.currentLicense.expiresAt) {
-        const expires = new Date(this.currentLicense.expiresAt)
-        const grace = new Date()
-        grace.setDate(grace.getDate() - 7)
-        return expires > grace
+        const grace = new Date(); grace.setDate(grace.getDate() - OFFLINE_GRACE_DAYS)
+        return new Date(this.currentLicense.expiresAt) > grace
       }
       return true
     }
   }
 
-  /** 本地离线验证激活码 */
-  private verifyLocal(key: string): { valid: boolean; tier?: UserTier; reason?: string } {
-    const parts = key.trim().toUpperCase().split('-')
-    if (parts.length !== 7 || parts[0] !== 'VB') {
-      return { valid: false, reason: '格式无效' }
+  async getDevices(): Promise<{ devices: DeviceInfo[]; maxDevices: number } | null> {
+    if (!this.currentLicense?.licenseKey) return null
+    try {
+      const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: this.currentLicense.licenseKey }),
+      })
+      const data = await resp.json()
+      if (data.success) {
+        return { devices: data.devices as DeviceInfo[], maxDevices: data.maxDevices as number }
+      }
+      return null
+    } catch {
+      return {
+        devices: [{
+          machineId: this.currentLicense.machineId,
+          activatedAt: this.currentLicense.activatedAt,
+          label: this.currentLicense.deviceLabel || '当前设备',
+        }],
+        maxDevices: this.currentLicense.maxDevices || 1,
+      }
     }
-    const [_, seg1, seg2, seg3, seg4, code, sig] = parts
-    if (code !== 'PRO' && code !== 'PRE') {
-      return { valid: false, reason: '类型无效' }
-    }
-    // 密钥从环境变量注入，构建时通过 Vite define 替换
-    const SECRET = process.env.VIDEOBOX_LICENSE_SECRET || 'videobox-dev-secret-placeholder'
-    const payload = `${seg1}-${seg2}-${seg3}-${seg4}-${code}-${SECRET}`
-    const expected = crypto.createHash('sha256').update(payload).digest('hex').substring(0, 8).toUpperCase()
-    if (sig !== expected) {
-      return { valid: false, reason: '激活码无效' }
-    }
-    const tier: UserTier = code === 'PRO' ? 'pro' : 'premium'
-    return { valid: true, tier }
   }
+
+  async deactivateDevice(machineId: string): Promise<{ success: boolean; message: string }> {
+    if (!this.currentLicense?.licenseKey) return { success: false, message: '未激活' }
+    try {
+      const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/deactivate-device`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: this.currentLicense.licenseKey, machineId }),
+      })
+      const data = await resp.json()
+      return { success: data.success, message: data.message || '' }
+    } catch { return { success: false, message: '无法连接服务器' } }
+  }
+
+  static getCurrentMachineId(): string { return getMachineId() }
+  static setActivationServer(url: string): void { LicenseManager.ACTIVATION_SERVER = url }
 }

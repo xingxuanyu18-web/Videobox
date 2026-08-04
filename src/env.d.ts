@@ -89,11 +89,14 @@ interface Window {
           canFullQuality: boolean
         }
       }>
-      activate: (key: string) => Promise<{ success: boolean; tier?: string; message: string }>
+      activate: (key: string, deviceLabel?: string) => Promise<{ success: boolean; tier?: string; message: string }>
       getTrialInfo: () => Promise<any>
       getDailyUsage: () => Promise<{ downloads: number; asrProcessings: number; limit: number | null }>
       canDownload: () => Promise<boolean>
       canProcessAsr: () => Promise<boolean>
+      getDevices: () => Promise<{ devices: Array<{ machineId: string; activatedAt: string; label: string }>; maxDevices: number } | null>
+      deactivateDevice: (machineId: string) => Promise<{ success: boolean; message: string }>
+      getMachineId: () => Promise<string>
     }
   }
 }

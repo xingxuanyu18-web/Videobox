@@ -303,6 +303,28 @@ function setupAutoUpdater() {
 
 app.whenReady().then(async () => {
   try { await licenseManager.verifyOnline() } catch { /* 静默 */ }
+
+  // 试用耗尽时弹窗提示
+  const currentTier = licenseManager.getTier()
+  if (currentTier === 'free' && licenseManager.isTrialExhausted()) {
+    const promptedFile = path.join(app.getPath('userData'), '.trial_prompted')
+    if (!fs.existsSync(promptedFile)) {
+      fs.writeFileSync(promptedFile, '1', 'utf-8')
+      dialog.showMessageBox({
+        type: 'info',
+        title: '试用已结束',
+        message: '您的免费试用次数已用完',
+        detail: '购买 Pro 买断版（99 元永久，2台设备）或订阅 Premium（19 元/月，3台设备）即可继续使用。',
+        buttons: ['查看方案', '稍后再说'],
+        defaultId: 0,
+      }).then(({ response }) => {
+        if (response === 0) {
+          shell.openExternal('http://localhost:8788?plan=pro')
+        }
+      })
+    }
+  }
+
   createWindow()
   // 最小菜单：保留 DevTools（F12 或 Ctrl+Shift+I）
   const isDev = !!VITE_DEV_SERVER_URL
@@ -2371,6 +2393,15 @@ ipcMain.handle('ytdlp:download', async (_event, options: {
   subtitles?: string[]
   filenameTemplate?: string
 }) => {
+  // 许可证检查
+  if (!licenseManager.canDownloadToday()) {
+    const tier = licenseManager.getTier()
+    if (tier === 'trial') {
+      throw new Error('试用次数已用完（共5次），请购买 Pro 或 Premium 继续使用')
+    }
+    throw new Error('今日免费下载次数已用完（3次/天），请升级 Pro 或 Premium')
+  }
+
   return new Promise(async (resolve, reject) => {
     const outputDir = ensureDownloadDir(options.outputDir)
     
@@ -2698,6 +2729,9 @@ ipcMain.handle('ytdlp:download', async (_event, options: {
         status: 'completed'
       })
       
+      // 记录下载用量
+      licenseManager.recordDownload()
+
       resolve({
         success: true,
         filePath: downloadedFile,
@@ -2990,12 +3024,17 @@ ipcMain.handle('license:getStatus', () => {
   }
 })
 
-ipcMain.handle('license:activate', async (_event: any, key: string) => {
-  return licenseManager.activate(key)
+ipcMain.handle('license:activate', async (_event: any, key: string, deviceLabel?: string) => {
+  return licenseManager.activate(key, deviceLabel)
 })
 
 ipcMain.handle('license:getTrialInfo', () => licenseManager.getTrialInfo())
 ipcMain.handle('license:getDailyUsage', () => licenseManager.getDailyUsage())
 ipcMain.handle('license:canDownload', () => licenseManager.canDownloadToday())
 ipcMain.handle('license:canProcessAsr', () => licenseManager.canProcessAsrToday())
+ipcMain.handle('license:getDevices', () => licenseManager.getDevices())
+ipcMain.handle('license:deactivateDevice', async (_event: any, machineId: string) => {
+  return licenseManager.deactivateDevice(machineId)
+})
+ipcMain.handle('license:getMachineId', () => LicenseManager.getCurrentMachineId())
 

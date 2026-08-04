@@ -97,11 +97,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 许可证
   license: {
     getStatus: () => ipcRenderer.invoke('license:getStatus'),
-    activate: (key: string) => ipcRenderer.invoke('license:activate', key),
+    activate: (key: string, deviceLabel?: string) => ipcRenderer.invoke('license:activate', key, deviceLabel),
     getTrialInfo: () => ipcRenderer.invoke('license:getTrialInfo'),
     getDailyUsage: () => ipcRenderer.invoke('license:getDailyUsage'),
     canDownload: () => ipcRenderer.invoke('license:canDownload'),
     canProcessAsr: () => ipcRenderer.invoke('license:canProcessAsr'),
+    getDevices: () => ipcRenderer.invoke('license:getDevices'),
+    deactivateDevice: (machineId: string) => ipcRenderer.invoke('license:deactivateDevice', machineId),
+    getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
   },
 
   // 更新检查

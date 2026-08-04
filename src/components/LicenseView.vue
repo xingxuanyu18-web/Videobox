@@ -119,8 +119,41 @@
                 {{ isActivating ? '验证中...' : '激活' }}
               </button>
             </div>
+            <div class="mt-2">
+              <input
+                v-model="deviceLabel"
+                type="text"
+                placeholder="设备名称（可选，如：我的台式机）"
+                class="w-full bg-surface-container-highest rounded-md px-3 py-1.5 text-xs text-on-surface border border-outline-variant/20 focus:border-primary focus:outline-none"
+              />
+            </div>
             <p v-if="activationError" class="text-xs text-error mt-2">{{ activationError }}</p>
             <p v-if="activationSuccess" class="text-xs text-primary mt-2">{{ activationSuccess }}</p>
+          </div>
+
+          <!-- Device Management -->
+          <div v-if="tier === 'pro' || tier === 'premium'" class="p-5 rounded-xl border border-border-subtle bg-bg-card">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-headline text-sm font-bold text-on-surface">设备管理</h3>
+              <span class="text-xs text-on-surface-variant">{{ devices.length }} / {{ maxDevices }} 台设备</span>
+            </div>
+            <div v-if="isLoadingDevices" class="text-xs text-on-surface-variant py-2">加载中...</div>
+            <div v-else-if="devices.length === 0" class="text-xs text-on-surface-variant py-2">暂无设备信息</div>
+            <div v-else class="space-y-2">
+              <div v-for="d in devices" :key="d.machineId" class="flex items-center justify-between py-2 px-3 rounded-md bg-surface-container-low">
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-on-surface truncate">{{ d.label }}</p>
+                  <p class="text-2xs text-on-surface-variant mt-0.5">激活于 {{ formatDate(d.activatedAt) }}</p>
+                </div>
+                <button
+                  class="ml-3 text-2xs text-error hover:text-error/80 transition-colors disabled:opacity-50 px-2 py-1 rounded hover:bg-error/10"
+                  :disabled="deactivatingMachineId === d.machineId"
+                  @click="deactivateDevice(d.machineId)"
+                >
+                  {{ deactivatingMachineId === d.machineId ? '解绑中...' : '解绑' }}
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Feature Comparison Table -->
@@ -232,7 +265,12 @@ const statusDescription = computed(() => {
   return '基础功能，每日有限额'
 })
 
-const ACTIVATION_PAGE_URL = 'http://localhost:8788'
+const ACTIVATION_PAGE_URL = 'https://videobox-api.videobox-api.workers.dev'
+const deviceLabel = ref('')
+const devices = ref<Array<{ machineId: string; activatedAt: string; label: string }>>([])
+const maxDevices = ref(0)
+const isLoadingDevices = ref(false)
+const deactivatingMachineId = ref<string | null>(null)
 
 function goToActivationPage(plan: string) {
   window.electronAPI?.shell?.openExternal?.(`${ACTIVATION_PAGE_URL}?plan=${plan}`)
@@ -246,10 +284,48 @@ onMounted(async () => {
       trialDownloads.value = status.trialRemaining.downloads
       trialAsr.value = status.trialRemaining.asr
     }
+    await loadDevices()
   } catch {
     // use defaults
   }
 })
+
+async function loadDevices() {
+  if (tier.value !== 'pro' && tier.value !== 'premium') return
+  try {
+    isLoadingDevices.value = true
+    const result = await window.electronAPI.license.getDevices()
+    if (result) {
+      devices.value = result.devices
+      maxDevices.value = result.maxDevices
+    }
+  } catch {
+    // offline - no device list
+  } finally {
+    isLoadingDevices.value = false
+  }
+}
+
+async function deactivateDevice(machineId: string) {
+  deactivatingMachineId.value = machineId
+  try {
+    const result = await window.electronAPI.license.deactivateDevice(machineId)
+    if (result.success) {
+      await loadDevices()
+    } else {
+      activationError.value = result.message
+    }
+  } catch {
+    activationError.value = '无法连接服务器'
+  } finally {
+    deactivatingMachineId.value = null
+  }
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
 
 async function activate() {
   if (!activationKey.value || isActivating.value) return
@@ -258,12 +334,14 @@ async function activate() {
   activationSuccess.value = ''
 
   try {
-    const result = await window.electronAPI.license.activate(activationKey.value)
+    const result = await window.electronAPI.license.activate(activationKey.value, deviceLabel.value || undefined)
     if (result.success) {
       activationSuccess.value = result.message
       tier.value = result.tier || 'pro'
       showActivationInput.value = null
       activationKey.value = ''
+      deviceLabel.value = ''
+      await loadDevices()
     } else {
       activationError.value = result.message
     }
