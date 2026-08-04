@@ -435,19 +435,25 @@ ipcMain.handle('shell:openExternal', async (_, url: string) => {
   await shell.openExternal(url)
 })
 
+// 从浏览器获取抖音 cookie
+async function getDouyinCookie(): Promise<string> {
+  const cookiePath = path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies');
+  // Cookie 无法直接从文件读取（加密），改用 Puppeteer 获取
+  return '';
+}
+
 // 使用直接 API 调用快速解析抖音视频
-async function parseDouyinWithAPI(url: string): Promise<any> {
+async function parseDouyinWithAPI(url: string, cookieStr?: string): Promise<any> {
   // 从 URL 中提取视频 ID
   let videoId: string | null = null
-  
+
   // 尝试多种 URL 格式
-  // 1. https://www.douyin.com/video/7082345237837899051
   const videoMatch = url.match(/\/video\/(\d+)/)
   if (videoMatch) {
     videoId = videoMatch[1]
   }
-  
-  // 2. 短链接格式 https://v.douyin.com/xxxxx
+
+  // 短链接格式 https://v.douyin.com/xxxxx
   if (!videoId) {
     try {
       const response = await fetch(url, {
@@ -465,29 +471,37 @@ async function parseDouyinWithAPI(url: string): Promise<any> {
     } catch (e) {
     }
   }
-  
+
   if (!videoId) {
     throw new Error('无法从 URL 提取视频 ID')
   }
-  
-  // 调用抖音 API - 增加更多参数提高成功率
+
+  // 调用抖音 API
   const apiUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}&aid=6383&channel=channel_pc_web&detail_list=1`
-  
-  const response = await fetch(apiUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Referer': 'https://www.douyin.com/',
-      'Accept': 'application/json',
-      'Accept-Language': 'zh-CN,zh;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Connection': 'keep-alive',
-    }
-  })
-  
-  const data = await response.json()
-  
+
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    'Referer': 'https://www.douyin.com/',
+    'Accept': 'application/json',
+    'Accept-Language': 'zh-CN,zh;q=0.9',
+  }
+  if (cookieStr) {
+    headers['Cookie'] = cookieStr
+  }
+
+  const response = await fetch(apiUrl, { headers })
+
+  // 检查响应是否为 JSON
+  const text = await response.text()
+  let data: any
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error('抖音 API 返回非 JSON（需要浏览器 cookie），尝试备用方案')
+  }
+
   if (!data.aweme_detail) {
-    throw new Error('API 解析失败')
+    throw new Error('API 解析失败：' + (data.status_msg || '无视频数据'))
   }
   
   const detail = data.aweme_detail
@@ -1891,14 +1905,16 @@ async function parseKuaishouWithPuppeteer(url: string): Promise<any> {
 ipcMain.handle('ytdlp:parse', async (_event, ...args) => {
   const url = args[0] as string
   const cookiesFile = args[1] as string | undefined
-  // 如果是抖音链接，优先使用 API 解析
+  // 抖音链接：Puppeteer 优先（有真实浏览器 cookie），API 作为快速回退
   if (isDouyinUrl(url)) {
     try {
-      return await parseDouyinWithAPI(url)
-    } catch (e: any) {
+      return await parseDouyinWithPuppeteer(url)
+    } catch (e1: any) {
+      console.log('[Douyin] Puppeteer failed:', e1.message, '- trying API fallback')
       try {
-        return await parseDouyinWithPuppeteer(url)
+        return await parseDouyinWithAPI(url)
       } catch (e2: any) {
+        throw new Error('抖音解析失败：请确认 Chrome 浏览器已安装且链接有效。' + e2.message)
       }
     }
   }
