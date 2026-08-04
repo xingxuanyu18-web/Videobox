@@ -205,7 +205,7 @@ function createWindow() {
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#000000',
-      symbolColor: '#FDC941',
+      symbolColor: '#F97316',
       height: 36,
     },
     icon: path.join(process.env.APP_ROOT || '', 'public/videobox.ico'),

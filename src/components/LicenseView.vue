@@ -232,7 +232,7 @@ const statusDescription = computed(() => {
   return '基础功能，每日有限额'
 })
 
-const ACTIVATION_PAGE_URL = 'https://videobox.app'
+const ACTIVATION_PAGE_URL = 'http://localhost:8788'
 
 function goToActivationPage(plan: string) {
   window.electronAPI?.shell?.openExternal?.(`${ACTIVATION_PAGE_URL}?plan=${plan}`)

@@ -87,7 +87,7 @@ export class LicenseManager {
   private todayUsage: DailyUsage | null = null
 
   // 激活服务器 URL
-  static ACTIVATION_SERVER = 'https://videobox-activation.example.com/api'
+  static ACTIVATION_SERVER = 'http://localhost:8788/api'
 
   constructor(userDataPath: string) {
     this.userDataPath = userDataPath
