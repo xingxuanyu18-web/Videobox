@@ -1,0 +1,97 @@
+/**
+ * AudioConverter - 使用 FFmpeg 进行音频/视频转换
+ */
+
+import * as path from 'path'
+import * as fs from 'fs'
+import { spawn } from 'child_process'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const AUDIO_EXTS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aac', '.wma']
+const VIDEO_EXTS = ['.mp4', '.avi', '.mov', '.ts', '.mkv', '.wmv', '.flv', '.webm', '.rmvb']
+
+export function isAudioFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  return AUDIO_EXTS.includes(ext)
+}
+
+export function isVideoFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  return VIDEO_EXTS.includes(ext)
+}
+
+export function getFfmpegPath(): string {
+  const isWin = process.platform === 'win32'
+  const ffmpegName = isWin ? 'ffmpeg.exe' : 'ffmpeg'
+
+  // 从当前模块路径反推项目根目录
+  const moduleDir = path.dirname(__filename)
+  // electron/asr → electron → 项目根
+  const projectRoot = path.resolve(moduleDir, '..', '..')
+
+  const possiblePaths = [
+    path.join(projectRoot, ffmpegName),
+    path.join(process.env.APP_ROOT || '', ffmpegName),
+    path.join(process.resourcesPath || '', ffmpegName),
+    path.join(process.cwd(), ffmpegName),
+    ffmpegName
+  ]
+
+  console.log('[FFmpeg] Searching paths:', possiblePaths.slice(0, 3))
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        console.log('[FFmpeg] Found:', p)
+        return p
+      }
+    } catch { /* skip */ }
+  }
+  console.error('[FFmpeg] NOT FOUND in any path')
+  return ffmpegName
+}
+
+export async function video2audio(inputFile: string, output?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const outPath = output || inputFile.replace(/\.[^.]+$/, '') + '.mp3'
+    const dir = path.dirname(outPath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+
+    const ffmpeg = getFfmpegPath()
+    const args = [
+      '-i', inputFile,
+      '-ac', '1',
+      '-f', 'mp3',
+      '-af', 'aresample=async=1',
+      '-y',
+      outPath
+    ]
+
+    const child = spawn(ffmpeg, args)
+    let stderr = ''
+
+    child.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
+
+    child.on('close', (code: number | null) => {
+      if (code === 0 && fs.existsSync(outPath)) {
+        resolve(outPath)
+      } else {
+        reject(new Error(`FFmpeg conversion failed: ${stderr.slice(-200)}`))
+      }
+    })
+
+    child.on('error', (err: Error) => {
+      reject(new Error(`FFmpeg not found or failed to start: ${err.message}`))
+    })
+  })
+}
+
+export function getSupportedExtensions(): string[] {
+  return [...AUDIO_EXTS, ...VIDEO_EXTS]
+}

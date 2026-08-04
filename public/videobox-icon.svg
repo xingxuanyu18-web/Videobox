@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="48" y2="48">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="2" y="2" width="44" height="44" rx="12" fill="url(#bg)"/>
+  <!-- Play triangle + waveform -->
+  <path d="M16 14L25 24L16 34V14Z" fill="white" opacity="0.95"/>
+  <path d="M29 18V30" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.75"/>
+  <path d="M33 16V32" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/>
+  <path d="M37 20V28" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
+</svg>

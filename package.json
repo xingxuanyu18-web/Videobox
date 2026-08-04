@@ -1,0 +1,102 @@
+{
+  "name": "videobox",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "全平台视频下载 + 智能语音识别字幕工具",
+  "author": "Videobox Team",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "bufferutil": "^4.1.0",
+    "electron-updater": "^6.8.3",
+    "puppeteer-core": "^24.40.0",
+    "utf-8-validate": "^6.0.6",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "autoprefixer": "^10.4.27",
+    "electron": "^30.0.1",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.1.6",
+    "vite-plugin-electron": "^0.28.6",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vue-tsc": "^2.0.26"
+  },
+  "main": "dist-electron/main.js",
+  "build": {
+    "appId": "com.videobox.app",
+    "productName": "Videobox",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/yt-dlp.exe",
+      "**/ffmpeg.exe"
+    ],
+    "extraFiles": [
+      {
+        "from": "./node_modules/electron/dist/locales",
+        "to": "locales",
+        "filter": [
+          "zh-CN.pak",
+          "zh-TW.pak",
+          "en-US.pak",
+          "en-GB.pak"
+        ]
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "./yt-dlp.exe",
+        "to": "./yt-dlp.exe"
+      },
+      {
+        "from": "./ffmpeg.exe",
+        "to": "./ffmpeg.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "./videobox.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "installerIcon": "./videobox.ico",
+      "uninstallerIcon": "./videobox.ico"
+    },
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "compression": "maximum",
+    "removePackageScripts": true,
+    "removePackageKeywords": true,
+    "publish": {
+      "provider": "github",
+      "owner": "xingxuanyu18-web",
+      "repo": "Videobox",
+      "releaseType": "release"
+    }
+  }
+}
