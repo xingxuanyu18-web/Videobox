@@ -194,6 +194,20 @@
       <!-- External Links -->
       <div class="space-y-3 mb-6">
         <button
+          @click="openExternal('https://github.com/xingxuanyu18-web/Videobox')"
+          class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-container-low hover:bg-surface-container-highest transition-colors group border border-outline-variant/10 text-left"
+        >
+          <div class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center group-hover:bg-surface transition-colors">
+            <MaterialIcon name="code" :size="18" class="text-on-surface" />
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-on-surface">GitHub 仓库</p>
+            <p class="text-xs text-on-surface-variant">github.com/xingxuanyu18-web/Videobox</p>
+          </div>
+          <MaterialIcon name="arrow_forward_ios" :size="14" class="text-on-surface-variant" />
+        </button>
+
+        <button
           @click="openExternal('mailto:support@videobox.app')"
           class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-container-low hover:bg-surface-container-highest transition-colors group border border-outline-variant/10 text-left"
         >
@@ -208,6 +222,38 @@
         </button>
       </div>
 
+      <!-- Original Projects -->
+      <div class="mb-6">
+        <h3 class="text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-3">原始项目</h3>
+        <p class="text-xs text-on-surface-variant/60 mb-3">Videobox 基于以下两个优秀的开源项目融合开发</p>
+        <div class="grid grid-cols-2 gap-3">
+          <button
+            @click="openExternal('https://github.com/cshuangyy/videdown')"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container-highest transition-colors border border-outline-variant/10 text-left group"
+          >
+            <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+              <MaterialIcon name="download" :size="16" class="text-primary" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-on-surface">Videdown</p>
+              <p class="text-xs text-on-surface-variant">视频下载引擎</p>
+            </div>
+          </button>
+          <button
+            @click="openExternal('https://github.com/WEIFENG2333/AsrTools')"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container-highest transition-colors border border-outline-variant/10 text-left group"
+          >
+            <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+              <MaterialIcon name="mic" :size="16" class="text-primary" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-on-surface">AsrTools</p>
+              <p class="text-xs text-on-surface-variant">ASR 语音识别</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
       <!-- License -->
       <div class="flex items-center justify-between py-4 border-t border-outline-variant/20">
         <div class="flex items-center gap-2">
@@ -219,7 +265,12 @@
 
       <!-- Copyright -->
       <div class="text-center pt-4 pb-2">
-        <p class="text-xs text-on-surface-variant/60">Videobox — 融合 AsrTools 与 Videdown</p>
+        <p class="text-xs text-on-surface-variant/60">基于
+          <span class="text-primary cursor-pointer hover:underline" @click="openExternal('https://github.com/cshuangyy/videdown')">Videdown</span>
+          &
+          <span class="text-primary cursor-pointer hover:underline" @click="openExternal('https://github.com/WEIFENG2333/AsrTools')">AsrTools</span>
+          融合开发
+        </p>
         <p class="text-xs text-on-surface-variant/40 mt-1">© 2026 Videobox</p>
       </div>
     </div>
