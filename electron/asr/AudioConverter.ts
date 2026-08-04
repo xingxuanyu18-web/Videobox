@@ -80,12 +80,15 @@ export async function video2audio(inputFile: string, output?: string): Promise<s
       if (code === 0 && fs.existsSync(outPath)) {
         resolve(outPath)
       } else {
-        reject(new Error(`FFmpeg conversion failed: ${stderr.slice(-200)}`))
+        const ffPath = getFfmpegPath()
+        const pathInfo = `ffmpeg路径=${ffPath}, 存在=${fs.existsSync(ffPath)}, 退出码=${code}, 输出存在=${fs.existsSync(outPath)}`
+        reject(new Error(`FFmpeg conversion failed: ${pathInfo} | ${stderr.slice(-200)}`))
       }
     })
 
     child.on('error', (err: Error) => {
-      reject(new Error(`FFmpeg not found or failed to start: ${err.message}`))
+      const ffPath = getFfmpegPath()
+      reject(new Error(`FFmpeg 启动失败: 路径=${ffPath}, 存在=${fs.existsSync(ffPath)}, ${err.message}`))
     })
   })
 }

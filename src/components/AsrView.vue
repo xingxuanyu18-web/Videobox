@@ -339,12 +339,17 @@ async function startProcessing() {
     currentProcessingFile.value = task.fileName
 
     try {
+      console.log('[ASR UI] Calling process:', task.filePath, task.engine, task.exportFormat)
       const result = await window.electronAPI.asr.process(task.filePath, task.engine, task.exportFormat)
+      console.log('[ASR UI] Success:', result)
       task.status = 'completed'
       task.resultPath = result.savePath
     } catch (e: any) {
+      console.error('[ASR UI] IPC Error:', e)
+      console.error('[ASR UI] Error message:', e.message)
+      console.error('[ASR UI] Error stack:', e.stack)
       task.status = 'error'
-      task.error = parseError(e.message)
+      task.error = parseError(e.message || '未知错误')
     }
 
     completedCount.value = i + 1

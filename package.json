@@ -67,6 +67,34 @@
       {
         "from": "./ffmpeg.exe",
         "to": "./ffmpeg.exe"
+      },
+      {
+        "from": "./avcodec-63.dll",
+        "to": "./avcodec-63.dll"
+      },
+      {
+        "from": "./avdevice-63.dll",
+        "to": "./avdevice-63.dll"
+      },
+      {
+        "from": "./avfilter-12.dll",
+        "to": "./avfilter-12.dll"
+      },
+      {
+        "from": "./avformat-63.dll",
+        "to": "./avformat-63.dll"
+      },
+      {
+        "from": "./avutil-61.dll",
+        "to": "./avutil-61.dll"
+      },
+      {
+        "from": "./swresample-7.dll",
+        "to": "./swresample-7.dll"
+      },
+      {
+        "from": "./swscale-10.dll",
+        "to": "./swscale-10.dll"
       }
     ],
     "win": {
