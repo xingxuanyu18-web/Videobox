@@ -2811,9 +2811,9 @@ ipcMain.handle('asr:process', async (_event: any, filePath: string, engine: stri
     console.log('[ASR IPC] Success:', result.savePath)
     return result
   } catch (e: any) {
-    console.error('[ASR IPC] Error:', e)
-    console.error('[ASR IPC] Stack:', e.stack)
-    const msg = e?.message || String(e) || 'ASR 处理失败'
+    console.error('[ASR IPC] Raw error:', JSON.stringify(e, Object.getOwnPropertyNames(e)))
+    console.error('[ASR IPC] Error type:', typeof e, 'name:', e?.name, 'message:', e?.message)
+    const msg = e?.message || e?.name || String(e) || 'ASR 处理失败（未知错误）'
     throw new Error(msg)
   }
 })

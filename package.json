@@ -85,7 +85,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "installerIcon": "./videobox.ico",
-      "uninstallerIcon": "./videobox.ico"
+      "uninstallerIcon": "./videobox.ico",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "include": "./installer.nsh"
     },
     "npmRebuild": false,
     "nodeGypRebuild": false,

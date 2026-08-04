@@ -27,15 +27,13 @@ export function getFfmpegPath(): string {
   const isWin = process.platform === 'win32'
   const ffmpegName = isWin ? 'ffmpeg.exe' : 'ffmpeg'
 
-  // 从当前模块路径反推项目根目录
-  const moduleDir = path.dirname(__filename)
-  // electron/asr → electron → 项目根
-  const projectRoot = path.resolve(moduleDir, '..', '..')
+  // resourcesPath 在打包后指向 resources/ 目录（extraResources 内容在此）
+  const resourcesPath = process.resourcesPath || ''
 
   const possiblePaths = [
-    path.join(projectRoot, ffmpegName),
+    path.join(resourcesPath, ffmpegName),
+    path.join(resourcesPath, 'app.asar.unpacked', ffmpegName),
     path.join(process.env.APP_ROOT || '', ffmpegName),
-    path.join(process.resourcesPath || '', ffmpegName),
     path.join(process.cwd(), ffmpegName),
     ffmpegName
   ]
@@ -49,7 +47,7 @@ export function getFfmpegPath(): string {
       }
     } catch { /* skip */ }
   }
-  console.error('[FFmpeg] NOT FOUND in any path')
+  console.error('[FFmpeg] NOT FOUND, searched:', possiblePaths)
   return ffmpegName
 }
 
