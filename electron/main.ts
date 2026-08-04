@@ -304,7 +304,43 @@ function setupAutoUpdater() {
 app.whenReady().then(async () => {
   try { await licenseManager.verifyOnline() } catch { /* 静默 */ }
   createWindow()
-  Menu.setApplicationMenu(null)  // 移除菜单栏
+  // 最小菜单：保留 DevTools（F12 或 Ctrl+Shift+I）
+  const isDev = !!VITE_DEV_SERVER_URL
+  const appMenu = Menu.buildFromTemplate([
+    {
+      label: 'Videobox',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools', accelerator: 'F12' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' }
+      ]
+    }
+  ])
+  Menu.setApplicationMenu(appMenu)
   setupAutoUpdater()
 
   // 启动 10 秒后静默检测更新
