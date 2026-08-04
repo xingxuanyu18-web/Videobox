@@ -82,7 +82,7 @@ export class BcutASR extends BaseASR {
       const resp = await fetch(this.uploadUrls[clip], {
         method: 'PUT',
         headers: HEADERS,
-        body: chunk
+        body: new Uint8Array(chunk)
       })
       if (!resp.ok) throw new Error(`Chunk upload failed: ${resp.status}`)
       const etag = resp.headers.get('Etag') || ''

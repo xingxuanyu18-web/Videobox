@@ -18,7 +18,7 @@ export class KuaiShouASR extends BaseASR {
   private async submit(): Promise<Record<string, unknown>> {
     const formData = new FormData()
     formData.append('typeId', '1')
-    formData.append('file', new Blob([this.fileBinary], { type: 'audio/mpeg' }), 'test.mp3')
+    formData.append('file', new Blob([new Uint8Array(this.fileBinary)], { type: 'audio/mpeg' }), 'test.mp3')
 
     const resp = await fetch('https://ai.kuaishou.com/api/effects/subtitle_generate', {
       method: 'POST',

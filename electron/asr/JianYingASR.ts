@@ -182,7 +182,7 @@ export class JianYingASR extends BaseASR {
     const resp = await fetch(url, {
       method: 'PUT',
       headers: this.uploadHeaders(),
-      body: this.fileBinary
+      body: new Uint8Array(this.fileBinary)
     })
     const data = await resp.json()
     if (data.success !== 0) {
@@ -205,7 +205,7 @@ export class JianYingASR extends BaseASR {
     await fetch(url, {
       method: 'PUT',
       headers: this.uploadHeaders(),
-      body: this.fileBinary
+      body: new Uint8Array(this.fileBinary)
     })
   }
 
