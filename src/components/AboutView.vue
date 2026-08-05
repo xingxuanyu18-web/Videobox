@@ -35,6 +35,12 @@
               <span>安装并重启</span>
             </button>
 
+            <!-- Mirror Toggle -->
+            <label v-if="!checkingUpdate && !downloading" class="flex items-center gap-2 text-xs text-text-muted cursor-pointer select-none">
+              <input type="checkbox" v-model="useMirror" class="accent-primary" @change="saveMirrorConfig" />
+              使用下载加速
+            </label>
+
             <!-- Check / Downloading Button -->
             <button
               v-else
@@ -293,7 +299,12 @@ const updateMessageClass = ref('')
 const latestVersion = ref('')
 const releaseNotes = ref('')
 const downloadUrl = ref('')
+const useMirror = ref(true)
 let removeStatusListener: (() => void) | null = null
+
+async function saveMirrorConfig() {
+  try { await window.electronAPI?.saveMirrorConfig?.({ enabled: useMirror.value }) } catch {}
+}
 
 onMounted(async () => {
   try {
@@ -304,6 +315,12 @@ onMounted(async () => {
   } catch (error) {
     console.error('获取版本号失败:', error)
   }
+
+  // 加载镜像配置
+  try {
+    const config = await window.electronAPI?.getMirrorConfig?.()
+    if (config) useMirror.value = config.enabled
+  } catch {}
 
   // 监听主进程推送的更新状态事件
   removeStatusListener = window.electronAPI?.onUpdateStatus?.((data) => {

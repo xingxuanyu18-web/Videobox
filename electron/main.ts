@@ -250,6 +250,16 @@ autoUpdater.setFeedURL({
   owner: GITHUB_OWNER,
   repo: GITHUB_REPO,
 })
+autoUpdater.autoDownload = false  // 手动下载，走镜像加速
+
+// 下载镜像地址（按顺序尝试，GitHub 原地址作最后兜底）
+const DOWNLOAD_MIRRORS = [
+  'https://ghfast.top/',
+  'https://ghproxy.net/',
+  'https://mirror.ghproxy.com/',
+]
+
+let downloadedInstallerPath: string | null = null
 
 // 更新检测结果缓存（5分钟内不重复请求）
 let lastUpdateCheckTime = 0
@@ -269,6 +279,8 @@ function setupAutoUpdater() {
       releaseNotes: info.releaseNotes,
       releaseDate: info.releaseDate,
     })
+    // 走镜像下载
+    downloadUpdateWithMirrors(info.version)
   })
 
   autoUpdater.on('update-not-available', () => {
@@ -301,6 +313,114 @@ function setupAutoUpdater() {
       error: error.message,
     })
   })
+}
+
+// ==================== 镜像下载 ====================
+
+async function downloadUpdateWithMirrors(version: string) {
+  const loadMirrorConfig = () => {
+    try {
+      const file = path.join(app.getPath('userData'), 'mirror_config.json')
+      if (fs.existsSync(file)) {
+        return JSON.parse(fs.readFileSync(file, 'utf8'))
+      }
+    } catch {}
+    return { enabled: true }
+  }
+
+  const mirrorConfig = loadMirrorConfig()
+  const filename = `Videobox.Setup.${version}.exe`
+  const baseUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/${filename}`
+
+  // 构建 URL 列表（镜像优先，原地址兜底）
+  const urls: { url: string; label: string }[] = []
+  if (mirrorConfig.enabled) {
+    DOWNLOAD_MIRRORS.forEach(m => urls.push({ url: m + baseUrl, label: `镜像 ${m}` }))
+  }
+  urls.push({ url: baseUrl, label: 'GitHub 官方' })
+
+  for (const { url, label } of urls) {
+    console.log(`[Update] Trying ${label}: ${url}`)
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Videobox-Updater/1.0' },
+      })
+      if (!res.ok || !res.body) {
+        console.log(`[Update] ${label} failed: HTTP ${res.status}`)
+        continue
+      }
+
+      const totalSize = parseInt(res.headers.get('content-length') || '0')
+      const tmpDir = os.tmpdir()
+      const filePath = path.join(tmpDir, filename)
+      const writer = fs.createWriteStream(filePath)
+      const reader = res.body.getReader()
+
+      const downloadStart = Date.now()
+      let downloaded = 0
+      let lastEmit = 0
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          downloaded += value.length
+          writer.write(Buffer.from(value))
+
+          const now = Date.now()
+          if (now - lastEmit > 500 || done) {
+            lastEmit = now
+            const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : 0
+            const elapsed = (now - downloadStart) / 1000
+            const speed = elapsed > 0 ? Math.round(downloaded / elapsed) : 0
+            win?.webContents.send('update:status', {
+              status: 'downloading',
+              percent,
+              bytesPerSecond: speed,
+              transferred: downloaded,
+              total: totalSize,
+            })
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+
+      writer.end()
+      await new Promise<void>((resolve, reject) => {
+        writer.on('finish', resolve)
+        writer.on('error', reject)
+      })
+
+      downloadedInstallerPath = filePath
+      win?.webContents.send('update:status', {
+        status: 'downloaded',
+        version,
+      })
+      // 清理旧安装包
+      cleanupOldInstallers(tmpDir, version)
+      return
+    } catch (e: any) {
+      console.log(`[Update] ${label} error:`, e.message)
+    }
+  }
+
+  // 全部失败
+  win?.webContents.send('update:status', {
+    status: 'error',
+    error: '所有下载源均失败，请检查网络连接',
+  })
+}
+
+function cleanupOldInstallers(tmpDir: string, _currentVersion: string) {
+  try {
+    const files = fs.readdirSync(tmpDir)
+    for (const f of files) {
+      if (f.startsWith('Videobox.Setup.') && f.endsWith('.exe')) {
+        try { fs.unlinkSync(path.join(tmpDir, f)) } catch {}
+      }
+    }
+  } catch {}
 }
 
 app.whenReady().then(async () => {
@@ -394,13 +514,15 @@ ipcMain.handle('app:checkForUpdates', async () => {
     const latestVersion = updateInfo?.version || ''
 
     // autoUpdater 会自动触发下载（autoDownload 默认为 true）
+    const dlFilename = `Videobox.Setup.${latestVersion}.exe`
     lastUpdateCheckResult = {
       hasUpdate: true,
       version: latestVersion,
       currentVersion,
       releaseNotes: updateInfo?.releaseNotes as string || '',
       releaseDate: updateInfo?.releaseDate || '',
-      downloadUrl: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+      downloadUrl: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/${dlFilename}`,
+      mirrorUrl: `https://ghfast.top/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/${dlFilename}`,
     }
     return lastUpdateCheckResult
   } catch (error: any) {
@@ -428,7 +550,15 @@ ipcMain.handle('app:checkForUpdates', async () => {
 })
 
 // 安装已下载的更新并重启
-ipcMain.handle('app:installUpdate', () => {
+ipcMain.handle('app:installUpdate', async () => {
+  // 优先使用镜像下载的安装包
+  if (downloadedInstallerPath && fs.existsSync(downloadedInstallerPath)) {
+    const { shell } = await import('electron')
+    shell.openPath(downloadedInstallerPath)
+    setTimeout(() => app.quit(), 2000)
+    return
+  }
+  // 回退到 electron-updater
   autoUpdater.quitAndInstall()
 })
 
@@ -3263,6 +3393,28 @@ ipcMain.handle('copywriting:ollamaOneClickSetup', async (_event: any, modelName:
         }
       })
     })
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message }
+  }
+})
+
+// ==================== Mirror Config ====================
+
+ipcMain.handle('app:getMirrorConfig', async () => {
+  try {
+    const file = path.join(app.getPath('userData'), 'mirror_config.json')
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))
+    }
+  } catch {}
+  return { enabled: true }
+})
+
+ipcMain.handle('app:saveMirrorConfig', async (_event: any, config: { enabled: boolean }) => {
+  try {
+    const file = path.join(app.getPath('userData'), 'mirror_config.json')
+    fs.writeFileSync(file, JSON.stringify(config, null, 2), 'utf8')
     return { success: true }
   } catch (e: any) {
     return { success: false, error: e.message }

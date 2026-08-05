@@ -147,6 +147,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 更新检查
   checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
+  getMirrorConfig: () => ipcRenderer.invoke('app:getMirrorConfig'),
+  saveMirrorConfig: (config: { enabled: boolean }) => ipcRenderer.invoke('app:saveMirrorConfig', config),
   installUpdate: () => ipcRenderer.invoke('app:installUpdate'),
   onUpdateStatus: (callback: (data: {
     status: 'checking' | 'available' | 'no-update' | 'downloading' | 'downloaded' | 'error'
