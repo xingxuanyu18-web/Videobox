@@ -34,14 +34,17 @@ export interface TrialInfo {
   firstSeenAt: string
   downloadsUsed: number
   asrUsed: number
+  copywritingUsed: number
   totalDownloadLimit: number
   totalAsrLimit: number
+  totalCopywritingLimit: number
 }
 
 export interface DailyUsage {
   date: string
   downloads: number
   asrProcessings: number
+  copywritingUses: number
 }
 
 export interface DeviceInfo {
@@ -52,6 +55,8 @@ export interface DeviceInfo {
 
 const TRIAL_DOWNLOAD_LIMIT = 5
 const TRIAL_ASR_LIMIT = 5
+export const TRIAL_COPYWRITING_LIMIT = 2
+export const FREE_DAILY_COPYWRITING_LIMIT = 2
 const FREE_DAILY_DOWNLOADS = 3
 const FREE_DAILY_ASR = 3
 const OFFLINE_GRACE_DAYS = 7
@@ -205,10 +210,23 @@ export class LicenseManager {
     if (!this.currentTrial) {
       this.currentTrial = {
         machineId: getMachineId(), firstSeenAt: new Date().toISOString(),
-        downloadsUsed: 0, asrUsed: 0,
+        downloadsUsed: 0, asrUsed: 0, copywritingUsed: 0,
         totalDownloadLimit: TRIAL_DOWNLOAD_LIMIT, totalAsrLimit: TRIAL_ASR_LIMIT,
+        totalCopywritingLimit: TRIAL_COPYWRITING_LIMIT,
       }
       this.saveTrial()
+    } else {
+      // 迁移旧试用数据：补充新增字段
+      let migrated = false
+      if (this.currentTrial.copywritingUsed === undefined) {
+        this.currentTrial.copywritingUsed = 0
+        migrated = true
+      }
+      if (this.currentTrial.totalCopywritingLimit === undefined) {
+        this.currentTrial.totalCopywritingLimit = TRIAL_COPYWRITING_LIMIT
+        migrated = true
+      }
+      if (migrated) this.saveTrial()
     }
   }
 
@@ -249,17 +267,18 @@ export class LicenseManager {
   getLicenseInfo(): LicenseInfo | null { return this.currentLicense }
   getTrialInfo(): TrialInfo | null { return this.currentTrial }
 
-  getRemainingTrial(): { downloads: number; asr: number } {
-    if (!this.currentTrial) return { downloads: 0, asr: 0 }
+  getRemainingTrial(): { downloads: number; asr: number; copywriting: number } {
+    if (!this.currentTrial) return { downloads: 0, asr: 0, copywriting: 0 }
     return {
       downloads: Math.max(0, this.currentTrial.totalDownloadLimit - this.currentTrial.downloadsUsed),
       asr: Math.max(0, this.currentTrial.totalAsrLimit - this.currentTrial.asrUsed),
+      copywriting: Math.max(0, this.currentTrial.totalCopywritingLimit - this.currentTrial.copywritingUsed),
     }
   }
 
   isTrialExhausted(): boolean {
     const r = this.getRemainingTrial()
-    return r.downloads <= 0 && r.asr <= 0
+    return r.downloads <= 0 && r.asr <= 0 && r.copywriting <= 0
   }
 
   canDownloadFullQuality(): boolean { return ['trial', 'pro', 'premium'].includes(this.getTier()) }
@@ -286,7 +305,7 @@ export class LicenseManager {
   private ensureTodayUsage(): void {
     const today = this.getTodayKey()
     if (!this.todayUsage || this.todayUsage.date !== today) {
-      this.todayUsage = { date: today, downloads: 0, asrProcessings: 0 }
+      this.todayUsage = { date: today, downloads: 0, asrProcessings: 0, copywritingUses: 0 }
       this.saveDailyUsage()
     }
   }
@@ -320,6 +339,14 @@ export class LicenseManager {
     if (this.todayUsage) { this.todayUsage.asrProcessings++; this.saveDailyUsage() }
     if (this.currentTrial && this.getTier() === 'trial') {
       this.currentTrial.asrUsed++; this.saveTrial()
+    }
+  }
+
+  recordCopywritingUse(): void {
+    this.ensureTodayUsage()
+    if (this.todayUsage) { this.todayUsage.copywritingUses++; this.saveDailyUsage() }
+    if (this.currentTrial && this.getTier() === 'trial') {
+      this.currentTrial.copywritingUsed++; this.saveTrial()
     }
   }
 

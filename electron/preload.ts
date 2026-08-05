@@ -107,6 +107,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
   },
 
+  // AI 文案
+  copywriting: {
+    rewrite: (input: { originalCopy: string; productInfo?: string; preferredDirection?: string; extraRequirements?: string }) =>
+      ipcRenderer.invoke('copywriting:rewrite', input),
+    generate: (input: { product: string; targetAudience: string; sellingPoints: string; marketingGoal?: string; tone?: string }) =>
+      ipcRenderer.invoke('copywriting:generate', input),
+    getConfig: () => ipcRenderer.invoke('copywriting:getConfig'),
+    saveConfig: (config: any) => ipcRenderer.invoke('copywriting:saveConfig', config),
+    testConnection: (config: any) => ipcRenderer.invoke('copywriting:testConnection', config),
+    onProgress: (callback: (data: {
+      mode: string; step: string; stepIndex: number; totalSteps: number;
+      status: string; message: string; results?: string[]; error?: string;
+    }) => void) => {
+      const handler = (_: any, data: any) => callback(data)
+      ipcRenderer.on('copywriting:progress', handler)
+      return () => { ipcRenderer.off('copywriting:progress', handler) }
+    },
+    // Ollama local LLM
+    ollamaDetect: () => ipcRenderer.invoke('copywriting:ollamaDetect'),
+    ollamaIsRunning: () => ipcRenderer.invoke('copywriting:ollamaIsRunning'),
+    ollamaIsInstalled: () => ipcRenderer.invoke('copywriting:ollamaIsInstalled'),
+    ollamaListModels: () => ipcRenderer.invoke('copywriting:ollamaListModels'),
+    ollamaHasModel: (modelName: string) => ipcRenderer.invoke('copywriting:ollamaHasModel', modelName),
+    ollamaPullModel: (modelName: string) => ipcRenderer.invoke('copywriting:ollamaPullModel', modelName),
+    ollamaOpenSite: () => ipcRenderer.invoke('copywriting:ollamaOpenSite'),
+    ollamaOneClickSetup: (modelName?: string) => ipcRenderer.invoke('copywriting:ollamaOneClickSetup', modelName),
+    onOllamaSetupProgress: (callback: (data: any) => void) => {
+      const handler = (_: any, data: any) => callback(data)
+      ipcRenderer.on('copywriting:ollamaSetupProgress', handler)
+      return () => { ipcRenderer.off('copywriting:ollamaSetupProgress', handler) }
+    },
+    onOllamaPullProgress: (callback: (data: { status: string; total?: number; completed?: number; percent?: number; message: string; error?: string }) => void) => {
+      const handler = (_: any, data: any) => callback(data)
+      ipcRenderer.on('copywriting:ollamaPullProgress', handler)
+      return () => { ipcRenderer.off('copywriting:ollamaPullProgress', handler) }
+    },
+  },
+
   // 更新检查
   checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
   installUpdate: () => ipcRenderer.invoke('app:installUpdate'),

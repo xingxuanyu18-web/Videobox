@@ -51,7 +51,7 @@ export interface HistoryRecord {
   createdAt: string
 }
 
-export type TabType = 'download' | 'asr' | 'history' | 'license' | 'about' | 'settings'
+export type TabType = 'download' | 'asr' | 'copywriting' | 'history' | 'license' | 'about' | 'settings'
 
 // ==================== ASR Types ====================
 
@@ -93,4 +93,47 @@ export interface LicenseStatus {
     canBatch: boolean
     canFullQuality: boolean
   }
+}
+
+// ==================== Copywriting Types ====================
+
+export type CopywritingMode = 'rewrite' | 'generate'
+
+export interface CopywritingInput {
+  mode: CopywritingMode
+}
+
+export interface RewriteInput extends CopywritingInput {
+  mode: 'rewrite'
+  originalCopy: string
+  productInfo?: string
+  preferredDirection?: string
+  extraRequirements?: string
+}
+
+export interface GenerateInput extends CopywritingInput {
+  mode: 'generate'
+  product: string
+  targetAudience: string
+  sellingPoints: string
+  marketingGoal?: string
+  tone?: string
+}
+
+export interface AIConfig {
+  provider: string
+  apiKey: string
+  baseUrl: string
+  model: string
+}
+
+export interface PipelineProgress {
+  mode: 'rewrite' | 'generate'
+  step: string
+  stepIndex: number
+  totalSteps: number
+  status: 'running' | 'completed' | 'error'
+  message: string
+  results?: string[]
+  error?: string
 }

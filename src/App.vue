@@ -56,6 +56,7 @@
     <main class="flex-1 flex overflow-hidden">
       <DownloadView v-show="currentTab === 'download'" />
       <AsrView v-show="currentTab === 'asr'" />
+      <CopywritingView v-show="currentTab === 'copywriting'" />
       <HistoryView v-show="currentTab === 'history'" />
       <LicenseView v-show="currentTab === 'license'" />
       <AboutView v-show="currentTab === 'about'" />
@@ -69,6 +70,7 @@ import { ref, computed, onMounted } from 'vue'
 import DownloadView from './components/DownloadView.vue'
 import AsrView from './components/AsrView.vue'
 import HistoryView from './components/HistoryView.vue'
+import CopywritingView from './components/CopywritingView.vue'
 import LicenseView from './components/LicenseView.vue'
 import AboutView from './components/AboutView.vue'
 import SettingsView from './components/SettingsView.vue'
@@ -79,8 +81,10 @@ const licenseTier = ref('free')
 const navItems = [
   { key: 'download', label: '视频下载', icon: 'download' },
   { key: 'asr', label: '语音识别', icon: 'mic' },
+  { key: 'copywriting', label: 'AI 文案', icon: 'edit_note' },
   { key: 'history', label: '任务历史', icon: 'history' },
   { key: 'about', label: '关于', icon: 'info' },
+  { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
 const licenseBadgeClass = computed(() => {

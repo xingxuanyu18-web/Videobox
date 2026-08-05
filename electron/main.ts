@@ -6,8 +6,10 @@ import { spawn, execSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import puppeteer from 'puppeteer-core'
-import { LicenseManager } from './license/LicenseManager'
+import { LicenseManager, FREE_DAILY_COPYWRITING_LIMIT } from './license/LicenseManager'
 import { processAsr, ASR_ENGINES, isAudioFile, isVideoFile } from './asr/index'
+import { runRewritePipeline, runGeneratePipeline, DEFAULT_AI_CONFIG, chat, autoDetect as ollamaAutoDetect, isOllamaRunning, isOllamaInstalled, hasModel, pullModel as ollamaPullModel, listModels, oneClickSetup, RECOMMENDED_MODEL } from './copywriting/index'
+import type { AIConfig } from './copywriting/index'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -3037,4 +3039,233 @@ ipcMain.handle('license:deactivateDevice', async (_event: any, machineId: string
   return licenseManager.deactivateDevice(machineId)
 })
 ipcMain.handle('license:getMachineId', () => LicenseManager.getCurrentMachineId())
+
+// ==================== Copywriting IPC Handlers ====================
+
+// AI 配置文件路径
+const aiConfigFile = path.join(app.getPath('userData'), 'ai_config.json')
+
+function loadAiConfig(): AIConfig {
+  try {
+    if (fs.existsSync(aiConfigFile)) {
+      const data = fs.readFileSync(aiConfigFile, 'utf8')
+      return { ...DEFAULT_AI_CONFIG, ...JSON.parse(data) }
+    }
+  } catch {}
+  return { ...DEFAULT_AI_CONFIG }
+}
+
+function saveAiConfig(config: Partial<AIConfig>): void {
+  try {
+    const current = loadAiConfig()
+    const merged = { ...current, ...config }
+    fs.writeFileSync(aiConfigFile, JSON.stringify(merged, null, 2), 'utf8')
+  } catch {}
+}
+
+ipcMain.handle('copywriting:getConfig', async () => {
+  const config = loadAiConfig()
+  // 脱敏 API Key
+  const maskedKey = config.apiKey
+    ? config.apiKey.slice(0, 4) + '***' + config.apiKey.slice(-4)
+    : ''
+  return {
+    provider: config.provider,
+    apiKey: maskedKey,
+    hasKey: !!config.apiKey,
+    baseUrl: config.baseUrl,
+    model: config.model,
+    maxTokens: config.maxTokens,
+    timeout: config.timeout,
+  }
+})
+
+ipcMain.handle('copywriting:saveConfig', async (_event: any, config: Partial<AIConfig>) => {
+  saveAiConfig(config)
+  return { success: true }
+})
+
+ipcMain.handle('copywriting:testConnection', async (_event: any, config: AIConfig) => {
+  try {
+    await chat(
+      [{ role: 'user', content: 'Hi' }],
+      { ...config, maxTokens: 10, timeout: 15000, retry: 0 },
+      0
+    )
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message || '连接失败' }
+  }
+})
+
+ipcMain.handle('copywriting:rewrite', async (_event: any, input: { originalCopy: string; productInfo?: string; preferredDirection?: string; extraRequirements?: string }) => {
+  // 许可证检查
+  const tier = licenseManager.getTier()
+  if (tier === 'free') {
+    const usage = licenseManager.getDailyUsage()
+    const copywritingUses = (usage as any).copywritingUses || 0
+    if (copywritingUses >= FREE_DAILY_COPYWRITING_LIMIT) {
+      throw new Error(`DAILY_LIMIT:今日免费改写次数已用完（${FREE_DAILY_COPYWRITING_LIMIT}次/天），请升级 Pro 或 Premium`)
+    }
+  }
+  if (tier === 'trial') {
+    const remaining = licenseManager.getRemainingTrial()
+    if ((remaining as any).copywriting !== undefined && (remaining as any).copywriting <= 0) {
+      throw new Error('TRIAL_EXHAUSTED:试用改写次数已用完，请购买 Pro 或 Premium')
+    }
+  }
+
+  const config = loadAiConfig()
+  if (!config.apiKey && config.provider !== 'ollama') {
+    throw new Error('请先在设置中配置 AI API Key')
+  }
+
+  const rewriteInput = {
+    originalCopy: input.originalCopy,
+    productInfo: input.productInfo,
+    preferredDirection: input.preferredDirection as any,
+    extraRequirements: input.extraRequirements,
+  }
+
+  try {
+    const onProgress = (data: any) => {
+      const windows = BrowserWindow.getAllWindows()
+      windows.forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('copywriting:progress', data)
+        }
+      })
+    }
+
+    const result = await runRewritePipeline(config, rewriteInput, onProgress)
+    licenseManager.recordCopywritingUse()
+    return result
+  } catch (e: any) {
+    throw new Error(e.message || '改写失败')
+  }
+})
+
+ipcMain.handle('copywriting:generate', async (_event: any, input: { product: string; targetAudience: string; sellingPoints: string; marketingGoal?: string; tone?: string }) => {
+  // 许可证检查
+  const tier = licenseManager.getTier()
+  if (tier === 'free') {
+    const usage = licenseManager.getDailyUsage()
+    const copywritingUses = (usage as any).copywritingUses || 0
+    if (copywritingUses >= 3) {
+      throw new Error('DAILY_LIMIT:今日免费生成次数已用完（3次/天），请升级 Pro 或 Premium')
+    }
+  }
+  if (tier === 'trial') {
+    const remaining = licenseManager.getRemainingTrial()
+    if ((remaining as any).copywriting !== undefined && (remaining as any).copywriting <= 0) {
+      throw new Error('TRIAL_EXHAUSTED:试用生成次数已用完，请购买 Pro 或 Premium')
+    }
+  }
+
+  const config = loadAiConfig()
+  if (!config.apiKey) {
+    throw new Error('请先在设置中配置 AI API Key')
+  }
+
+  const generateInput = {
+    product: input.product,
+    targetAudience: input.targetAudience,
+    sellingPoints: input.sellingPoints,
+    marketingGoal: input.marketingGoal,
+    tone: input.tone,
+  }
+
+  try {
+    const onProgress = (data: any) => {
+      const windows = BrowserWindow.getAllWindows()
+      windows.forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('copywriting:progress', data)
+        }
+      })
+    }
+
+    const result = await runGeneratePipeline(config, generateInput, onProgress)
+    licenseManager.recordCopywritingUse()
+    return result
+  } catch (e: any) {
+    throw new Error(e.message || '生成失败')
+  }
+})
+
+// ==================== Ollama / Local LLM IPC Handlers ====================
+
+ipcMain.handle('copywriting:ollamaDetect', async () => {
+  try {
+    return await ollamaAutoDetect(RECOMMENDED_MODEL)
+  } catch (e: any) {
+    return {
+      ollamaFound: false, ollamaRunning: false,
+      modelInstalled: false, modelName: RECOMMENDED_MODEL, needPull: false,
+      message: e.message || '检测失败',
+    }
+  }
+})
+
+ipcMain.handle('copywriting:ollamaIsRunning', async () => {
+  return isOllamaRunning()
+})
+
+ipcMain.handle('copywriting:ollamaIsInstalled', async () => {
+  return isOllamaInstalled()
+})
+
+ipcMain.handle('copywriting:ollamaListModels', async () => {
+  try {
+    const models = await listModels()
+    return { models }
+  } catch (e: any) {
+    return { models: [], error: e.message }
+  }
+})
+
+ipcMain.handle('copywriting:ollamaHasModel', async (_event: any, modelName: string) => {
+  try {
+    return await hasModel(modelName)
+  } catch {
+    return false
+  }
+})
+
+ipcMain.handle('copywriting:ollamaPullModel', async (_event: any, modelName: string) => {
+  try {
+    await ollamaPullModel(modelName, (progress) => {
+      const windows = BrowserWindow.getAllWindows()
+      windows.forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('copywriting:ollamaPullProgress', progress)
+        }
+      })
+    })
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('copywriting:ollamaOpenSite', async () => {
+  const { shell } = await import('electron')
+  shell.openExternal('https://ollama.com/download/windows')
+})
+
+ipcMain.handle('copywriting:ollamaOneClickSetup', async (_event: any, modelName: string) => {
+  try {
+    await oneClickSetup(modelName || RECOMMENDED_MODEL, (progress) => {
+      const windows = BrowserWindow.getAllWindows()
+      windows.forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('copywriting:ollamaSetupProgress', progress)
+        }
+      })
+    })
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e.message }
+  }
+})
 
