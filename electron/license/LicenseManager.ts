@@ -124,8 +124,7 @@ export class LicenseManager {
   private currentTrial: TrialInfo | null = null
   private todayUsage: DailyUsage | null = null
 
-  // 部署后改为你的真实域名，如 'https://api.videobox.app/api'
-  static ACTIVATION_SERVER = 'http://localhost:8788/api'
+  static ACTIVATION_SERVER = 'https://videobox-api.videobox-api.workers.dev/api'
 
   constructor(userDataPath: string) {
     this.userDataPath = userDataPath

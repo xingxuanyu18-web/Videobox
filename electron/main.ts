@@ -441,7 +441,7 @@ app.whenReady().then(async () => {
         defaultId: 0,
       }).then(({ response }) => {
         if (response === 0) {
-          shell.openExternal('http://localhost:8788?plan=pro')
+          shell.openExternal('https://videobox-api.videobox-api.workers.dev?plan=pro')
         }
       })
     }

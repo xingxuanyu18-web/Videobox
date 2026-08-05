@@ -5,5 +5,5 @@ compatibility_flags = ["nodejs_compat"]
 
 kv_namespaces = [
   { binding = "VIDEOBOX_ACTIVATIONS", id = "2a5facace2254ae08e8e2c0494ee75d0" },
-  { binding = "VIDEOBOX_SITE_HTML", id = "" }
+  { binding = "VIDEOBOX_SITE_HTML", id = "26544e142ee442d9a22e05610d0bca9f" }
 ]
