@@ -51,8 +51,20 @@ export default {
         case '/api/purchase': return handlePurchase(request, SECRET, store)
         case '/api/webhook/mianbaoduo': return handleMianbaoduoWebhook(request, SECRET, store)
         case '/api/health': return handleHealth(store)
-        default: return json({ error: 'Not Found' }, 404)
       }
+
+      // Non-API paths: serve landing page HTML from KV (if configured) or redirect
+      if (env.VIDEOBOX_SITE_HTML) {
+        return new Response(env.VIDEOBOX_SITE_HTML, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
+        })
+      }
+
+      // Fallback: redirect to GitHub
+      return new Response(null, {
+        status: 302,
+        headers: { Location: 'https://github.com/xingxuanyu18-web/Videobox', ...CORS_HEADERS },
+      })
     } catch (e) {
       console.error('Unhandled error:', e)
       return err('服务器内部错误', 500)
