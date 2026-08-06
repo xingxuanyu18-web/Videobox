@@ -14,11 +14,18 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
 import * as os from 'os'
+import { net } from 'electron'
+
+// 使用 Electron net.fetch（Chromium 网络栈，走系统代理）替代 Node.js 原生 fetch
+async function proxyFetch(url: string, init: RequestInit): Promise<Response> {
+  return net.fetch(url, init) as unknown as Response
+}
 
 export type UserTier = 'trial' | 'free' | 'pro' | 'premium'
 
 export interface LicenseInfo {
   tier: UserTier
+  plan: string | null
   activatedAt: string
   expiresAt: string | null
   machineId: string
@@ -152,6 +159,7 @@ export class LicenseManager {
         if (data.machineId === currentId || (data as any).machineId === currentId.substring(0, 16)) {
           this.currentLicense = {
             tier: (data as any).tier || 'free',
+            plan: (data as any).plan || null,
             activatedAt: (data as any).activatedAt || new Date().toISOString(),
             expiresAt: (data as any).expiresAt || null,
             machineId: currentId,
@@ -172,6 +180,7 @@ export class LicenseManager {
           if (data.machineId === getMachineId().substring(0, 16)) {
             this.currentLicense = {
               tier: (data as any).tier || 'free',
+              plan: (data as any).plan || null,
               activatedAt: (data as any).activatedAt || new Date().toISOString(),
               expiresAt: (data as any).expiresAt || null,
               machineId: getMachineId(),
@@ -326,25 +335,32 @@ export class LicenseManager {
   }
 
   recordDownload(): void {
+    const tier = this.getTier()
+    // Premium/Pro 不限制次数，不需要记录
+    if (tier === 'pro' || tier === 'premium') return
     this.ensureTodayUsage()
     if (this.todayUsage) { this.todayUsage.downloads++; this.saveDailyUsage() }
-    if (this.currentTrial && this.getTier() === 'trial') {
+    if (this.currentTrial && tier === 'trial') {
       this.currentTrial.downloadsUsed++; this.saveTrial()
     }
   }
 
   recordAsrProcessing(): void {
+    const tier = this.getTier()
+    if (tier === 'pro' || tier === 'premium') return
     this.ensureTodayUsage()
     if (this.todayUsage) { this.todayUsage.asrProcessings++; this.saveDailyUsage() }
-    if (this.currentTrial && this.getTier() === 'trial') {
+    if (this.currentTrial && tier === 'trial') {
       this.currentTrial.asrUsed++; this.saveTrial()
     }
   }
 
   recordCopywritingUse(): void {
+    const tier = this.getTier()
+    if (tier === 'pro' || tier === 'premium') return
     this.ensureTodayUsage()
     if (this.todayUsage) { this.todayUsage.copywritingUses++; this.saveDailyUsage() }
-    if (this.currentTrial && this.getTier() === 'trial') {
+    if (this.currentTrial && tier === 'trial') {
       this.currentTrial.copywritingUsed++; this.saveTrial()
     }
   }
@@ -358,15 +374,108 @@ export class LicenseManager {
     }
   }
 
+  // ==================== Plan Codes ====================
+  // PRO = lifetime, PR1=30d, PR2=90d, PR3=180d, PR4=365d, PRE=30d (legacy)
+
+  static codeToDays(code: string): number {
+    if (code === 'PRO') return 0
+    if (code === 'PRE') return 30
+    const m = code.match(/^PR(\d)$/)
+    if (m) return [0, 30, 90, 180, 365][parseInt(m[1])] || 30
+    return 30
+  }
+
+  static codeToLabel(code: string): string {
+    switch (code) {
+      case 'PRO': return 'Pro 永久买断'
+      case 'PRE': return '月付订阅'
+      case 'PR1': return '月付订阅'
+      case 'PR2': return '季付订阅'
+      case 'PR3': return '半年付订阅'
+      case 'PR4': return '年付订阅'
+      default: return 'Premium 订阅'
+    }
+  }
+
+  /** Map a key code to plan id for storage */
+  static codeToPlanLabel(code: string): string {
+    switch (code) {
+      case 'PRO': return 'pro'
+      case 'PR2': return 'quarterly'
+      case 'PR3': return 'semi_annual'
+      case 'PR4': return 'annual'
+      case 'PR1': case 'PRE': default: return 'monthly'
+    }
+  }
+
+  /** Plan id → Chinese label */
+  static planToLabel(plan: string): string {
+    switch (plan) {
+      case 'pro': return 'Pro 永久买断'
+      case 'monthly': return '月付订阅'
+      case 'quarterly': return '季付订阅'
+      case 'semi_annual': return '半年付订阅'
+      case 'annual': return '年付订阅'
+      default: return 'Premium 订阅'
+    }
+  }
+
   static isValidKeyFormat(key: string): boolean {
-    return /^VB-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-(PRO|PRE)-[A-F0-9]{8}$/i.test(key.trim())
+    return /^VB-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-(PRO|PRE|PR[1-4])-[A-F0-9]{8}$/i.test(key.trim())
   }
 
   static tierFromKey(key: string): UserTier | null {
     const parts = key.trim().toUpperCase().split('-')
-    if (parts.length === 7 && parts[5] === 'PRO') return 'pro'
-    if (parts.length === 7 && parts[5] === 'PRE') return 'premium'
+    if (parts.length !== 7) return null
+    const code = parts[5]
+    if (code === 'PRO') return 'pro'
+    if (code === 'PRE' || code.match(/^PR[1-4]$/)) return 'premium'
     return null
+  }
+
+  /** Premium 订阅剩余天数（null = 非 premium 或无过期时间） */
+  getDaysRemaining(): number | null {
+    if (!this.currentLicense || !this.currentLicense.expiresAt) return null
+    const ms = new Date(this.currentLicense.expiresAt).getTime() - Date.now()
+    return Math.max(0, Math.ceil(ms / 86400000))
+  }
+
+  /** 是否需要提示续费（剩余 ≤ 7 天） */
+  needsRenewalNotice(): boolean {
+    if (this.currentLicense?.tier !== 'premium') return false
+    const days = this.getDaysRemaining()
+    return days !== null && days <= 7
+  }
+
+  /** 续费状态信息 */
+  getRenewalStatus(): { tier: UserTier; label: string; plan: string; daysRemaining: number | null; expired: boolean; needsRenewal: boolean } {
+    const tier = this.getTier()
+    const days = this.getDaysRemaining()
+    const plan = this.currentLicense?.plan || ''
+    let label = ''
+    let expired = false
+
+    if (this.currentLicense?.tier === 'premium') {
+      if (days !== null && days > 0) {
+        label = `${LicenseManager.planToLabel(plan)} · 剩余 ${days} 天`
+      } else if (days === 0) {
+        expired = true
+        label = '订阅已过期，请续费'
+      }
+    } else if (tier === 'pro') {
+      label = 'Pro 永久买断'
+    } else {
+      label = '免费版'
+    }
+
+    return {
+      tier,
+      label,
+      plan,
+      daysRemaining: days,
+      expired,
+      needsRenewal: days !== null && days <= 7,
+    }
   }
 
   async activate(licenseKey: string, deviceLabel?: string): Promise<{ success: boolean; tier?: UserTier; message: string }> {
@@ -375,17 +484,24 @@ export class LicenseManager {
       return { success: false, message: '激活码格式无效' }
     }
     try {
-      const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/activate`, {
+      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: licenseKey.trim(), machineId, deviceLabel }),
       })
       const data = await resp.json()
       if (!data.success) {
+        // 服务端拒绝，尝试本地验证兜底
+        const local = LicenseManager.verifyLocal(licenseKey)
+        if (local.valid && local.tier) {
+          return this.activateLocal(local.tier, machineId, licenseKey, deviceLabel, local.durationDays)
+        }
         return { success: false, message: data.message || '激活失败' }
       }
+      const plan = data.plan || (data.tier === 'pro' ? 'pro' : 'monthly')
       this.currentLicense = {
         tier: data.tier,
+        plan,
         activatedAt: new Date().toISOString(),
         expiresAt: data.expiresAt || null,
         machineId,
@@ -396,20 +512,79 @@ export class LicenseManager {
         lastVerifiedAt: new Date().toISOString(),
       }
       this.saveLicense()
-      const label = data.tier === 'pro' ? 'Pro 买断版' : 'Premium 订阅版'
-      return { success: true, tier: data.tier, message: `激活成功！${label}` }
+      const label = LicenseManager.codeToLabel(licenseKey.trim().toUpperCase().split('-')[5] || '')
+      const days = data.durationDays ?? LicenseManager.codeToDays(licenseKey.trim().toUpperCase().split('-')[5] || '')
+      const suffix = data.tier === 'premium' ? ` · ${days}天` : ''
+      return { success: true, tier: data.tier, plan: plan, message: `激活成功！${label}${suffix}` }
     } catch {
       if (this.currentLicense) {
         return { success: true, tier: this.currentLicense.tier, message: '无法连接服务器，使用缓存许可证' }
+      }
+      // 服务端连不上，本地验证兜底
+      const local = LicenseManager.verifyLocal(licenseKey)
+      if (local.valid && local.tier) {
+        return this.activateLocal(local.tier, machineId, licenseKey, deviceLabel, local.durationDays)
       }
       return { success: false, message: '无法连接激活服务器，请检查网络后重试' }
     }
   }
 
+  /** 本地激活（离线兜底），从 key code 中提取精确有效期 */
+  private activateLocal(tier: UserTier, machineId: string, licenseKey: string, deviceLabel?: string, durationDays?: number): { success: boolean; tier?: UserTier; plan?: string; message: string } {
+    let expiresAt: string | null = null
+    if (tier === 'premium') {
+      const days = durationDays ?? 30
+      expiresAt = new Date(Date.now() + days * 86400000).toISOString()
+    }
+
+    const code = licenseKey.trim().toUpperCase().split('-')[5] || ''
+    const plan = code === 'PRO' ? 'pro' : (LicenseManager.codeToPlanLabel(code))
+
+    this.currentLicense = {
+      tier,
+      plan,
+      activatedAt: new Date().toISOString(),
+      expiresAt,
+      machineId,
+      licenseKey: licenseKey.trim().toUpperCase(),
+      maxDevices: tier === 'pro' ? 5 : 3,
+      deviceLabel: deviceLabel || '',
+      serverVerified: false,
+      lastVerifiedAt: null,
+    }
+    this.saveLicense()
+
+    const label = LicenseManager.codeToLabel(code)
+    const inDays = durationDays ?? LicenseManager.codeToDays(code)
+    const suffix = tier === 'premium' ? ` · ${inDays}天` : ''
+    return { success: true, tier, plan, message: `激活成功！${label}${suffix} (离线验证)` }
+  }
+
+  /** 本地验证激活码签名 + 提取有效期（用于服务器不可用时的离线兜底） */
+  static verifyLocal(key: string): { valid: boolean; tier?: UserTier; code?: string; durationDays?: number; reason?: string } {
+    const DEFAULT_SECRET = 'videobox-dev-secret-placeholder'
+    const parts = key.trim().toUpperCase().split('-')
+    if (parts.length !== 7 || parts[0] !== 'VB') {
+      return { valid: false, reason: '格式无效' }
+    }
+    const [, seg1, seg2, seg3, seg4, code, sig] = parts
+    if (code !== 'PRO' && code !== 'PRE' && !code.match(/^PR[1-4]$/)) {
+      return { valid: false, reason: '类型无效' }
+    }
+    const payload = `${seg1}-${seg2}-${seg3}-${seg4}-${code}-${DEFAULT_SECRET}`
+    const expected = crypto.createHash('sha256').update(payload).digest('hex').substring(0, 8).toUpperCase()
+    if (sig !== expected) {
+      return { valid: false, reason: '激活码无效' }
+    }
+    const tier = code === 'PRO' ? ('pro' as const) : ('premium' as const)
+    const durationDays = LicenseManager.codeToDays(code)
+    return { valid: true, tier, code, durationDays }
+  }
+
   async verifyOnline(): Promise<boolean> {
     if (!this.currentLicense?.licenseKey) return false
     try {
-      const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/verify`, {
+      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ machineId: getMachineId(), licenseKey: this.currentLicense.licenseKey }),
@@ -447,7 +622,7 @@ export class LicenseManager {
   async getDevices(): Promise<{ devices: DeviceInfo[]; maxDevices: number } | null> {
     if (!this.currentLicense?.licenseKey) return null
     try {
-      const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/devices`, {
+      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/devices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: this.currentLicense.licenseKey }),
@@ -472,7 +647,7 @@ export class LicenseManager {
   async deactivateDevice(machineId: string): Promise<{ success: boolean; message: string }> {
     if (!this.currentLicense?.licenseKey) return { success: false, message: '未激活' }
     try {
-      const resp = await fetch(`${LicenseManager.ACTIVATION_SERVER}/deactivate-device`, {
+      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/deactivate-device`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: this.currentLicense.licenseKey, machineId }),

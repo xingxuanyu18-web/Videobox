@@ -1,0 +1,13 @@
+{
+  "key:VB-6JRD-QP4S-DVGG-YRTY-PRO-147AA77E": {
+    "key": "VB-6JRD-QP4S-DVGG-YRTY-PRO-147AA77E",
+    "tier": "pro",
+    "code": "PRO",
+    "plan": "monthly",
+    "maxDevices": 2,
+    "devices": [],
+    "createdAt": "2026-08-06T06:55:24.178Z",
+    "expiresAt": null,
+    "revoked": false
+  }
+}

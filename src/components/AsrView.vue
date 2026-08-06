@@ -272,6 +272,10 @@ const dailyAsrRemaining = ref(3)
 
 // Load data on mount
 onMounted(async () => {
+  await refreshAsrLicense()
+})
+
+async function refreshAsrLicense() {
   try {
     const [engs, status, usage] = await Promise.all([
       window.electronAPI.asr.getEngines(),
@@ -281,8 +285,10 @@ onMounted(async () => {
     engines.value = engs
     licenseStatus.value = status
     availableFormats.value = status.limits.exportFormats
-    if (usage.limit) {
+    if (usage.limit != null && status.tier !== 'premium' && status.tier !== 'pro') {
       dailyAsrRemaining.value = Math.max(0, usage.limit - usage.asrProcessings)
+    } else {
+      dailyAsrRemaining.value = -1 // 不限次数
     }
   } catch (e) {
     // Fallback defaults
@@ -292,7 +298,10 @@ onMounted(async () => {
       { name: 'KuaiShou', label: 'K 接口 (快手)', available: true, locked: true },
     ]
   }
-})
+}
+
+// 激活后刷新
+window.addEventListener('license:activated', () => refreshAsrLicense())
 
 async function selectFiles() {
   const files = await window.electronAPI.dialog.selectVideo()

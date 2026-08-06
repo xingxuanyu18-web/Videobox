@@ -22,7 +22,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
 
 export const OLLAMA_CONFIG: Partial<AIConfig> = {
   provider: 'ollama',
-  baseUrl: 'http://localhost:11434/v1',
+  baseUrl: 'http://localhost:11434',
   model: 'qwen3:4b',
 }
 

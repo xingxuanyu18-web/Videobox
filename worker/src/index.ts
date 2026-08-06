@@ -13,6 +13,7 @@
 
 import { verifyKey, generateKey } from './key-generator'
 import { ActivationStore, ActivationRecord } from './storage'
+import { SUBSCRIPTION_PLANS, codeToDays, planToCode } from './plan-codes'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -199,40 +200,68 @@ async function handleDeactivateDevice(req: Request, secret: string, store: Activ
 
 async function handlePurchase(req: Request, secret: string, store: ActivationStore | null): Promise<Response> {
   const { plan = 'pro', maxDevices } = await req.json() as { plan?: string; maxDevices?: number }
-  if (!plan || !['pro', 'premium'].includes(plan)) return err('无效方案')
 
-  const devices = maxDevices || (plan === 'pro' ? 2 : 3)
-  const generated = await generateKey(plan as 'pro' | 'premium', devices, secret)
+  let tier: 'pro' | 'premium'
+  let durationDays: number
+
+  if (plan === 'pro') {
+    tier = 'pro'
+    durationDays = 0
+  } else if (SUBSCRIPTION_PLANS[plan]) {
+    tier = 'premium'
+    durationDays = SUBSCRIPTION_PLANS[plan].days
+  } else {
+    return err('无效方案: ' + plan)
+  }
+
+  const devices = maxDevices || (tier === 'pro' ? 2 : 3)
+  const generated = await generateKey(tier, devices, secret, durationDays, plan)
 
   if (store) {
     const record: ActivationRecord = {
-      key: generated.key, tier: generated.tier, maxDevices: generated.maxDevices,
-      devices: [], createdAt: new Date().toISOString(), expiresAt: generated.expiresAt, revoked: false,
+      key: generated.key, tier: generated.tier, plan, code: generated.code,
+      maxDevices: generated.maxDevices,
+      devices: [], createdAt: new Date().toISOString(),
+      expiresAt: generated.expiresAt, revoked: false,
     }
     await store.storeGeneratedKey(record)
   }
 
-  return json({ success: true, key: generated.key, tier: generated.tier, maxDevices: generated.maxDevices })
+  return json({ success: true, key: generated.key, tier: generated.tier, maxDevices: generated.maxDevices, plan, durationDays: generated.durationDays, code: generated.code, expiresAt: generated.expiresAt })
 }
 
 async function handleMianbaoduoWebhook(req: Request, secret: string, store: ActivationStore | null): Promise<Response> {
   const body = await req.json() as { order_id?: string; product_id?: string; pay_status?: string }
   if (body.pay_status !== 'success') return json({ success: false, message: '支付未完成' })
 
-  const tier = body.product_id === 'premium' ? ('premium' as const) : ('pro' as const)
+  // product_id can be 'pro', 'monthly', 'quarterly', 'semi_annual', or 'annual'
+  const plan = body.product_id || 'pro'
+  let tier: 'pro' | 'premium'
+  let durationDays: number
+
+  if (plan === 'pro') {
+    tier = 'pro'
+    durationDays = 0
+  } else if (SUBSCRIPTION_PLANS[plan]) {
+    tier = 'premium'
+    durationDays = SUBSCRIPTION_PLANS[plan].days
+  } else {
+    return err('无效商品: ' + plan)
+  }
+
   const maxDevices = tier === 'pro' ? 2 : 3
-  const generated = await generateKey(tier, maxDevices, secret)
+  const generated = await generateKey(tier, maxDevices, secret, durationDays, plan)
 
   if (store) {
     const record: ActivationRecord = {
       key: generated.key, tier: generated.tier, maxDevices: generated.maxDevices,
       devices: [], createdAt: new Date().toISOString(), expiresAt: generated.expiresAt,
-      purchaseOrderId: body.order_id, revoked: false,
+      purchaseOrderId: body.order_id, plan, code: generated.code, revoked: false,
     }
     await store.storeGeneratedKey(record)
   }
 
-  return json({ success: true, key: generated.key, tier: generated.tier })
+  return json({ success: true, key: generated.key, tier: generated.tier, plan, durationDays: generated.durationDays, code: generated.code })
 }
 
 async function handleHealth(store: ActivationStore | null): Promise<Response> {

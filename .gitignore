@@ -38,6 +38,9 @@ dist-electron
 # Release directory (electron-builder output)
 release/
 
+# Builds archive (local copies of released installers)
+builds/
+
 # Test coverage
 coverage/
 

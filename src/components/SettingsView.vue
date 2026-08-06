@@ -262,7 +262,7 @@ function onProviderChange() {
     aiConfig.baseUrl = 'https://api.deepseek.com'
     aiConfig.model = 'deepseek-chat'
   } else if (aiConfig.provider === 'openai') {
-    aiConfig.baseUrl = 'https://api.openai.com/v1'
+    aiConfig.baseUrl = 'https://api.openai.com'
     aiConfig.model = 'gpt-3.5-turbo'
   }
 }
@@ -371,7 +371,7 @@ function saveSettings() {
   localStorage.setItem('settings', JSON.stringify(settings.value))
   ;(window as any).electronAPI.copywriting.saveConfig({
     provider: aiConfig.provider, apiKey: aiConfig.apiKey || '',
-    baseUrl: aiConfig.provider === 'ollama' ? 'http://localhost:11434/v1' : (aiConfig.baseUrl || defaultBaseUrl),
+    baseUrl: aiConfig.provider === 'ollama' ? 'http://localhost:11434' : (aiConfig.baseUrl || defaultBaseUrl),
     model: aiConfig.provider === 'ollama' ? ollamaModelName.value : (aiConfig.model || defaultModel),
   }).catch(() => {})
   alert('设置已保存')

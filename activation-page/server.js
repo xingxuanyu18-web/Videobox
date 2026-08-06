@@ -81,20 +81,56 @@ app.post('/api/verify', (req, res) => {
   return res.json({ valid: true, tier: activation.tier, expiresAt: activation.expiresAt });
 });
 
-// POST /api/purchase - generate key (simulate purchase)
+// Subscription plans
+const SUBSCRIPTION_PLANS = {
+  monthly:     { label: '月付', days: 30,  price: '19.9', code: 'PR1' },
+  quarterly:   { label: '季付', days: 90,  price: '49.9', code: 'PR2' },
+  semi_annual: { label: '半年付', days: 180, price: '79.9', code: 'PR3' },
+  annual:      { label: '年付', days: 365, price: '119.9', code: 'PR4' },
+};
+
+function codeToDays(code) {
+  if (code === 'PRO') return 0;
+  if (code === 'PRE') return 30;
+  const m = code.match(/^PR(\d)$/);
+  if (m) return [0, 30, 90, 180, 365][parseInt(m[1])] || 30;
+  return 30;
+}
+
+// POST /api/purchase - generate key
 app.post('/api/purchase', (req, res) => {
   const { plan } = req.body;
-  if (!plan || !['pro', 'premium'].includes(plan)) {
+  if (!plan) {
     return res.json({ success: false, message: '无效方案' });
   }
+
+  let tier, durationDays, maxDevices, code;
+  if (plan === 'pro') {
+    tier = 'pro';
+    code = 'PRO';
+    durationDays = 0;
+    maxDevices = 2;
+  } else if (SUBSCRIPTION_PLANS[plan]) {
+    tier = 'premium';
+    code = SUBSCRIPTION_PLANS[plan].code;
+    durationDays = SUBSCRIPTION_PLANS[plan].days;
+    maxDevices = 3;
+  } else {
+    return res.json({ success: false, message: '无效方案: ' + plan });
+  }
+
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const seg = () => Array.from({ length: 4 }, () => chars[crypto.randomInt(chars.length)]).join('');
-  const code = plan === 'pro' ? 'PRO' : 'PRE';
   const body = `${seg()}-${seg()}-${seg()}-${seg()}-${code}`;
   const payload = `${body}-${SECRET}`;
   const sig = crypto.createHash('sha256').update(payload).digest('hex').substring(0, 8).toUpperCase();
   const key = `VB-${body}-${sig}`;
-  return res.json({ success: true, key });
+
+  const expiresAt = durationDays > 0
+    ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  return res.json({ success: true, key, tier, code, maxDevices, plan, durationDays, expiresAt });
 });
 
 // Health check

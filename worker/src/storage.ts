@@ -16,6 +16,8 @@ export interface DeviceInfo {
 export interface ActivationRecord {
   key: string
   tier: 'pro' | 'premium'
+  plan?: string        // subscription plan id or 'pro'
+  code?: string        // key code: PRO | PR1 | PR2 | PR3 | PR4
   maxDevices: number
   devices: DeviceInfo[]
   createdAt: string

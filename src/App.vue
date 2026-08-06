@@ -77,6 +77,7 @@ import SettingsView from './components/SettingsView.vue'
 
 const currentTab = ref('download')
 const licenseTier = ref('free')
+const licensePlan = ref('')
 
 const navItems = [
   { key: 'download', label: '视频下载', icon: 'download' },
@@ -103,7 +104,10 @@ const licenseDotClass = computed(() => {
 
 const licenseBadgeText = computed(() => {
   if (licenseTier.value === 'pro') return 'Pro 永久版'
-  if (licenseTier.value === 'premium') return 'Premium 订阅'
+  if (licenseTier.value === 'premium') {
+    if (licensePlan.value) return planBadgeLabel(licensePlan.value)
+    return 'Premium 订阅'
+  }
   if (licenseTier.value === 'trial') return '试用中'
   return '免费版'
 })
@@ -113,12 +117,33 @@ const licenseBadgeAction = computed(() => {
   return ''
 })
 
+function planBadgeLabel(plan: string): string {
+  switch (plan) {
+    case 'pro': return 'Pro 永久'
+    case 'monthly': return '月付订阅'
+    case 'quarterly': return '季付订阅'
+    case 'semi_annual': return '半年订阅'
+    case 'annual': return '年付订阅'
+    default: return 'Premium'
+  }
+}
+
 onMounted(async () => {
+  await refreshLicenseBadge()
+})
+
+// 激活后重新刷新
+window.addEventListener('license:activated', () => { refreshLicenseBadge() })
+
+async function refreshLicenseBadge() {
   try {
     const status = await window.electronAPI?.license?.getStatus?.()
-    if (status) licenseTier.value = status.tier
+    if (status) {
+      licenseTier.value = status.tier
+      licensePlan.value = status.licenseInfo?.plan || ''
+    }
   } catch {}
-})
+}
 
 // Event listeners
 window.addEventListener('navigate-to-settings', () => { currentTab.value = 'settings' })

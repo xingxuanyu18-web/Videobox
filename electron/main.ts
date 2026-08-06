@@ -8,10 +8,27 @@ import os from 'node:os'
 import puppeteer from 'puppeteer-core'
 import { LicenseManager, FREE_DAILY_COPYWRITING_LIMIT } from './license/LicenseManager'
 import { processAsr, ASR_ENGINES, isAudioFile, isVideoFile } from './asr/index'
-import { runRewritePipeline, runGeneratePipeline, DEFAULT_AI_CONFIG, chat, autoDetect as ollamaAutoDetect, isOllamaRunning, isOllamaInstalled, hasModel, pullModel as ollamaPullModel, listModels, oneClickSetup, RECOMMENDED_MODEL } from './copywriting/index'
+import { runRewritePipeline, runGeneratePipeline, DEFAULT_AI_CONFIG, chat, autoDetect as ollamaAutoDetect, isOllamaRunning, findOllamaExe, startOllamaService, hasModel, pullModel as ollamaPullModel, listModels, oneClickSetup, RECOMMENDED_MODEL } from './copywriting/index'
 import type { AIConfig } from './copywriting/index'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// ==================== Debug Logging ====================
+let _debugLogPath = ''
+function debugLogPath(): string {
+  if (!_debugLogPath) {
+    _debugLogPath = path.join(app.getPath('userData'), 'debug.log')
+  }
+  return _debugLogPath
+}
+function debugLog(tag: string, msg: string, obj?: any) {
+  const now = new Date().toISOString()
+  const line = `[${now}] [${tag}] ${msg}` + (obj ? ' ' + JSON.stringify(obj, null, 2) : '') + '\n'
+  try {
+    fs.appendFileSync(debugLogPath(), line, 'utf-8')
+  } catch {}
+  console.log(line.trim())
+}
 
 process.env.APP_ROOT = path.join(__dirname, '..')
 
@@ -252,7 +269,12 @@ autoUpdater.setFeedURL({
 })
 autoUpdater.autoDownload = false  // 手动下载，走镜像加速
 
-// 下载镜像地址（按顺序尝试，GitHub 原地址作最后兜底）
+// Gitee 国内仓库（下载最快）
+const GITEE_OWNER = 'xing-xuanyu'
+const GITEE_REPO = 'videobox-releases'
+const GITEE_DOWNLOAD_BASE = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download`
+
+// 下载地址优先级：Gitee > 镜像 > GitHub 官方
 const DOWNLOAD_MIRRORS = [
   'https://ghfast.top/',
   'https://ghproxy.net/',
@@ -307,11 +329,14 @@ function setupAutoUpdater() {
     })
   })
 
-  autoUpdater.on('error', (error) => {
-    win?.webContents.send('update:status', {
-      status: 'error',
-      error: error.message,
-    })
+  autoUpdater.on('error', (err) => {
+    const msg = err?.message || String(err)
+    // 过滤掉 autoUpdater 自身的连接错误——我们已用 net.fetch 替代
+    if (msg.includes('ERR_CONNECTION') || msg.includes('net::ERR_')) {
+      console.log('[Update] autoUpdater network error (ignored):', msg)
+      return
+    }
+    win?.webContents.send('update:status', { status: 'error', error: msg })
   })
 }
 
@@ -330,14 +355,16 @@ async function downloadUpdateWithMirrors(version: string) {
 
   const mirrorConfig = loadMirrorConfig()
   const filename = `Videobox.Setup.${version}.exe`
-  const baseUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/${filename}`
+  const githubUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/${filename}`
+  const giteeUrl = `${GITEE_DOWNLOAD_BASE}/v${version}/${filename}`
 
-  // 构建 URL 列表（镜像优先，原地址兜底）
+  // 构建 URL 列表（Gitee 优先 → 镜像 → GitHub 兜底）
   const urls: { url: string; label: string }[] = []
+  urls.push({ url: giteeUrl, label: 'Gitee 国内高速' })
   if (mirrorConfig.enabled) {
-    DOWNLOAD_MIRRORS.forEach(m => urls.push({ url: m + baseUrl, label: `镜像 ${m}` }))
+    DOWNLOAD_MIRRORS.forEach(m => urls.push({ url: m + githubUrl, label: `镜像 ${m}` }))
   }
-  urls.push({ url: baseUrl, label: 'GitHub 官方' })
+  urls.push({ url: githubUrl, label: 'GitHub 官方' })
 
   for (const { url, label } of urls) {
     console.log(`[Update] Trying ${label}: ${url}`)
@@ -487,10 +514,37 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(appMenu)
   setupAutoUpdater()
 
-  // 启动 10 秒后静默检测更新
+  // 启动 10 秒后静默检测更新（使用 IPC handler，走代理）
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
+    ipcMain.emit('app:checkForUpdates-stub' as any)
   }, 10000)
+  // 内部触发一次静默检查
+  ;(async () => {
+    await new Promise(r => setTimeout(r, 10000))
+    try {
+      const { net } = await import('electron')
+      const res = await net.fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+        { headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Videobox/1.0' } }
+      )
+      if (res.ok) {
+        const data = await res.json() as any
+        const latestVersion = (data.tag_name || '').replace(/^v/, '')
+        const currentVersion = app.getVersion()
+        if (latestVersion && latestVersion !== currentVersion) {
+          const githubUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/Videobox.Setup.${latestVersion}.exe`
+          const giteeUrl = `${GITEE_DOWNLOAD_BASE}/v${latestVersion}/Videobox.Setup.${latestVersion}.exe`
+          lastUpdateCheckResult = {
+            hasUpdate: true, version: latestVersion, currentVersion,
+            releaseNotes: data.body || '', releaseDate: data.published_at || '',
+            downloadUrl: giteeUrl,
+            mirrorUrl: `https://ghfast.top/${githubUrl}`,
+          }
+          win?.webContents.send('update:status', { status: 'available', version: latestVersion, releaseNotes: data.body || '' })
+        }
+      }
+    } catch {}
+  })()
 })
 
 // 获取应用版本号
@@ -499,6 +553,8 @@ ipcMain.handle('app:getVersion', () => {
 })
 
 // 手动检测更新（带 5 分钟缓存防抖）
+// 使用 Electron net.fetch 而不是 autoUpdater.checkForUpdates()，
+// 因为 Chromium 网络栈走系统代理，公司网络环境下也能用
 ipcMain.handle('app:checkForUpdates', async () => {
   const now = Date.now()
   if (now - lastUpdateCheckTime < UPDATE_CACHE_MS && lastUpdateCheckResult) {
@@ -509,42 +565,52 @@ ipcMain.handle('app:checkForUpdates', async () => {
   const currentVersion = app.getVersion()
 
   try {
-    const result = await autoUpdater.checkForUpdates()
-    const updateInfo = result?.updateInfo
-    const latestVersion = updateInfo?.version || ''
+    const { net } = await import('electron')
+    const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
+    const res = await net.fetch(apiUrl, {
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Videobox-Updater/1.0' },
+    })
 
-    // autoUpdater 会自动触发下载（autoDownload 默认为 true）
+    if (!res.ok) {
+      throw new Error(`GitHub API 返回 HTTP ${res.status}`)
+    }
+
+    const data = await res.json() as any
+    const latestVersion = (data.tag_name || '').replace(/^v/, '')
+    const hasUpdate = latestVersion && latestVersion !== currentVersion
+
+    if (!hasUpdate) {
+      lastUpdateCheckResult = { hasUpdate: false, currentVersion }
+      return lastUpdateCheckResult
+    }
+
     const dlFilename = `Videobox.Setup.${latestVersion}.exe`
+    const githubUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/${dlFilename}`
+    const giteeUrl = `${GITEE_DOWNLOAD_BASE}/v${latestVersion}/${dlFilename}`
     lastUpdateCheckResult = {
       hasUpdate: true,
       version: latestVersion,
       currentVersion,
-      releaseNotes: updateInfo?.releaseNotes as string || '',
-      releaseDate: updateInfo?.releaseDate || '',
-      downloadUrl: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/${dlFilename}`,
-      mirrorUrl: `https://ghfast.top/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/${dlFilename}`,
+      releaseNotes: data.body || '',
+      releaseDate: data.published_at || '',
+      downloadUrl: giteeUrl,
+      mirrorUrl: `https://ghfast.top/${githubUrl}`,
     }
+
+    // 触发镜像下载（不依赖 autoUpdater）
+    downloadUpdateWithMirrors(latestVersion)
+
     return lastUpdateCheckResult
   } catch (error: any) {
     const errorMsg = error?.message || ''
-
-    // "没有新版本" 是正常情况，不是错误
-    if (errorMsg.includes('No published versions') ||
-        errorMsg.includes('ERR_UPDATER_NO_PUBLISHED_VERSIONS') ||
-        (errorMsg.includes('Latest version') && errorMsg.includes('current'))) {
-      lastUpdateCheckResult = {
-        hasUpdate: false,
-        currentVersion,
-      }
-      return lastUpdateCheckResult
-    }
-
     console.error('检测更新失败:', errorMsg)
-    lastUpdateCheckResult = null // 错误不缓存
+    lastUpdateCheckResult = null
     return {
       hasUpdate: false,
       currentVersion,
-      error: errorMsg || '检测更新失败，请检查网络连接',
+      error: errorMsg.includes('fetch failed') || errorMsg.includes('ERR_')
+        ? '网络连接失败，请检查代理设置或稍后重试'
+        : (errorMsg || '检测更新失败，请检查网络连接'),
     }
   }
 })
@@ -3146,6 +3212,7 @@ ipcMain.handle('license:getStatus', () => {
     trialRemaining: tier === 'trial' ? licenseManager.getRemainingTrial() : null,
     trialExhausted: licenseManager.isTrialExhausted(),
     licenseInfo: licenseManager.getLicenseInfo(),
+    renewalStatus: licenseManager.getRenewalStatus(),
     limits: {
       dailyDownloads: licenseManager.getDailyLimit(),
       exportFormats: licenseManager.getExportFormats(),
@@ -3179,7 +3246,12 @@ function loadAiConfig(): AIConfig {
   try {
     if (fs.existsSync(aiConfigFile)) {
       const data = fs.readFileSync(aiConfigFile, 'utf8')
-      return { ...DEFAULT_AI_CONFIG, ...JSON.parse(data) }
+      const parsed = JSON.parse(data)
+      // 迁移：修复旧版本 baseUrl 已包含 /v1 导致重复拼接的问题
+      if (parsed.baseUrl && typeof parsed.baseUrl === 'string') {
+        parsed.baseUrl = parsed.baseUrl.replace(/\/v1\/?$/, '')
+      }
+      return { ...DEFAULT_AI_CONFIG, ...parsed }
     }
   } catch {}
   return { ...DEFAULT_AI_CONFIG }
@@ -3192,7 +3264,6 @@ function saveAiConfig(config: Partial<AIConfig>): void {
     fs.writeFileSync(aiConfigFile, JSON.stringify(merged, null, 2), 'utf8')
   } catch {}
 }
-
 ipcMain.handle('copywriting:getConfig', async () => {
   const config = loadAiConfig()
   // 脱敏 API Key
@@ -3229,25 +3300,46 @@ ipcMain.handle('copywriting:testConnection', async (_event: any, config: AIConfi
 })
 
 ipcMain.handle('copywriting:rewrite', async (_event: any, input: { originalCopy: string; productInfo?: string; preferredDirection?: string; extraRequirements?: string }) => {
+  debugLog('REWRITE', '=== 文案改写 IPC 开始 ===', { inputLength: input.originalCopy?.length })
+
   // 许可证检查
   const tier = licenseManager.getTier()
+  debugLog('REWRITE', '许可证等级', { tier })
   if (tier === 'free') {
     const usage = licenseManager.getDailyUsage()
     const copywritingUses = (usage as any).copywritingUses || 0
+    debugLog('REWRITE', '免费用户用量', { copywritingUses, limit: FREE_DAILY_COPYWRITING_LIMIT })
     if (copywritingUses >= FREE_DAILY_COPYWRITING_LIMIT) {
       throw new Error(`DAILY_LIMIT:今日免费改写次数已用完（${FREE_DAILY_COPYWRITING_LIMIT}次/天），请升级 Pro 或 Premium`)
     }
   }
   if (tier === 'trial') {
     const remaining = licenseManager.getRemainingTrial()
+    debugLog('REWRITE', '试用剩余', remaining)
     if ((remaining as any).copywriting !== undefined && (remaining as any).copywriting <= 0) {
       throw new Error('TRIAL_EXHAUSTED:试用改写次数已用完，请购买 Pro 或 Premium')
     }
   }
 
   const config = loadAiConfig()
+  debugLog('REWRITE', 'AI 配置', { provider: config.provider, hasKey: !!config.apiKey, baseUrl: config.baseUrl, model: config.model })
   if (!config.apiKey && config.provider !== 'ollama') {
     throw new Error('请先在设置中配置 AI API Key')
+  }
+
+  // Ollama: 检查连通性，若未运行则尝试自动启动
+  if (config.provider === 'ollama') {
+    debugLog('REWRITE', '检查 Ollama...', { baseUrl: config.baseUrl })
+    if (!(await isOllamaRunning())) {
+      debugLog('REWRITE', 'Ollama 未运行，尝试自动启动...')
+      debugLog('REWRITE', 'findOllamaExe', { path: findOllamaExe() })
+      const started = await startOllamaService(5)
+      debugLog('REWRITE', '自动启动结果', { started })
+      if (!started) {
+        throw new Error('Ollama 服务未启动，请从开始菜单打开 Ollama，或在设置页面点击"一键配置"')
+      }
+    }
+    debugLog('REWRITE', 'Ollama 已就绪')
   }
 
   const rewriteInput = {
@@ -3259,6 +3351,7 @@ ipcMain.handle('copywriting:rewrite', async (_event: any, input: { originalCopy:
 
   try {
     const onProgress = (data: any) => {
+      debugLog('REWRITE', '进度', data)
       const windows = BrowserWindow.getAllWindows()
       windows.forEach(w => {
         if (!w.isDestroyed()) {
@@ -3267,17 +3360,22 @@ ipcMain.handle('copywriting:rewrite', async (_event: any, input: { originalCopy:
       })
     }
 
+    debugLog('REWRITE', '调用 runRewritePipeline...')
     const result = await runRewritePipeline(config, rewriteInput, onProgress)
+    debugLog('REWRITE', 'Pipeline 完成', { resultCount: result.results?.length })
     licenseManager.recordCopywritingUse()
     return result
   } catch (e: any) {
+    debugLog('REWRITE', 'Pipeline 异常', { message: e.message, stack: e.stack })
     throw new Error(e.message || '改写失败')
   }
 })
 
 ipcMain.handle('copywriting:generate', async (_event: any, input: { product: string; targetAudience: string; sellingPoints: string; marketingGoal?: string; tone?: string }) => {
+  debugLog('GENERATE', '=== 文案生成 IPC 开始 ===', { product: input.product?.length, audience: input.targetAudience?.length })
   // 许可证检查
   const tier = licenseManager.getTier()
+  debugLog('GENERATE', '许可证等级', { tier })
   if (tier === 'free') {
     const usage = licenseManager.getDailyUsage()
     const copywritingUses = (usage as any).copywritingUses || 0
@@ -3293,8 +3391,19 @@ ipcMain.handle('copywriting:generate', async (_event: any, input: { product: str
   }
 
   const config = loadAiConfig()
-  if (!config.apiKey) {
+  if (!config.apiKey && config.provider !== 'ollama') {
     throw new Error('请先在设置中配置 AI API Key')
+  }
+  if (config.provider === 'ollama') {
+    debugLog('GENERATE', '检查 Ollama...', { baseUrl: config.baseUrl })
+    if (!(await isOllamaRunning())) {
+      debugLog('GENERATE', 'Ollama 未运行，尝试自动启动...')
+      const started = await startOllamaService(5)
+      debugLog('GENERATE', '自动启动结果', { started })
+      if (!started) {
+        throw new Error('Ollama 服务未启动，请从开始菜单打开 Ollama，或在设置页面点击"一键配置"')
+      }
+    }
   }
 
   const generateInput = {
@@ -3342,7 +3451,7 @@ ipcMain.handle('copywriting:ollamaIsRunning', async () => {
 })
 
 ipcMain.handle('copywriting:ollamaIsInstalled', async () => {
-  return isOllamaInstalled()
+  return findOllamaExe() !== null
 })
 
 ipcMain.handle('copywriting:ollamaListModels', async () => {

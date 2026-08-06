@@ -4,6 +4,8 @@ export { runGeneratePipeline } from './pipeline-generate'
 export {
   isOllamaRunning,
   isOllamaInstalled,
+  findOllamaExe,
+  startOllamaService,
   listModels,
   hasModel,
   pullModel,

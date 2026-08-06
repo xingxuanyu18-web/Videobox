@@ -1,0 +1,13 @@
+{
+  "key:VB-64ZA-TRKH-FBGV-GFV7-PR2-3ED73589": {
+    "key": "VB-64ZA-TRKH-FBGV-GFV7-PR2-3ED73589",
+    "tier": "premium",
+    "code": "PR2",
+    "plan": "quarterly",
+    "maxDevices": 3,
+    "devices": [],
+    "createdAt": "2026-08-06T06:55:27.815Z",
+    "expiresAt": "2026-11-04T06:55:27.815Z",
+    "revoked": false
+  }
+}

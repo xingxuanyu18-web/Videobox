@@ -368,26 +368,37 @@ function goToLicense() {
 // ==================== Pipeline ====================
 
 async function startPipeline() {
-  if (isProcessing.value) return
+  console.log('[COPYWRITING-VUE] startPipeline() called, mode=' + mode.value)
+  if (isProcessing.value) { console.log('[COPYWRITING-VUE] already processing, skip'); return }
 
-  try {
-    const config = await (window as any).electronAPI.copywriting.getConfig()
-    // Ollama 本地模型不需要 API Key
-    if (!config.hasKey && config.provider !== 'ollama') {
-      alert('请先在设置中配置 AI API Key，或切换到本地模型')
-      return
-    }
-  } catch {
-    alert('请先在设置中配置 AI API Key，或切换到本地模型')
-    return
-  }
-
+  // 立即显示 loading 状态，避免点击后"没有反应"
   isProcessing.value = true
+  console.log('[COPYWRITING-VUE] isProcessing=true')
   pipelineError.value = ''
   results.value = []
   pipelineSteps.value = []
   selectedResult.value = null
 
+  // Step 1: 检查配置
+  try {
+    console.log('[COPYWRITING-VUE] calling getConfig...')
+    const config = await (window as any).electronAPI.copywriting.getConfig()
+    console.log('[COPYWRITING-VUE] getConfig result:', JSON.stringify(config))
+    if (!config.hasKey && config.provider !== 'ollama') {
+      console.log('[COPYWRITING-VUE] no API key, abort')
+      pipelineError.value = '请先在设置中配置 AI API Key，或切换到本地模型'
+      isProcessing.value = false
+      return
+    }
+  } catch (e: any) {
+    console.log('[COPYWRITING-VUE] getConfig failed:', e.message)
+    pipelineError.value = '无法获取 AI 配置，请检查设置'
+    isProcessing.value = false
+    return
+  }
+
+  // Step 2: 监听进度
+  console.log('[COPYWRITING-VUE] setting up progress listener')
   progressCleanup = (window as any).electronAPI.copywriting.onProgress(
     (data: { step: string; stepIndex: number; totalSteps: number; status: string; message: string; results?: string[]; error?: string }) => {
       const existingIdx = pipelineSteps.value.findIndex(s => s.step === data.step)
@@ -408,27 +419,33 @@ async function startPipeline() {
     }
   )
 
+  // Step 3: 执行 pipeline
   try {
     if (mode.value === 'rewrite') {
-      const res = await (window as any).electronAPI.copywriting.rewrite({
+      console.log('[COPYWRITING-VUE] calling IPC rewrite...')
+      const rewriteRes = await (window as any).electronAPI.copywriting.rewrite({
         originalCopy: rewriteInput.originalCopy,
         productInfo: rewriteInput.productInfo || undefined,
         preferredDirection: rewriteInput.preferredDirection || undefined,
         extraRequirements: rewriteInput.extraRequirements || undefined,
       })
-      if (res.results) results.value = res.results
+      console.log('[COPYWRITING-VUE] rewrite returned:', JSON.stringify({ hasResults: !!rewriteRes?.results, count: rewriteRes?.results?.length }))
+      if (rewriteRes.results) results.value = rewriteRes.results
     } else {
-      const res = await (window as any).electronAPI.copywriting.generate({
+      console.log('[COPYWRITING-VUE] calling IPC generate...')
+      const genRes = await (window as any).electronAPI.copywriting.generate({
         product: generateInput.product,
         targetAudience: generateInput.targetAudience,
         sellingPoints: generateInput.sellingPoints,
         marketingGoal: generateInput.marketingGoal || undefined,
         tone: generateInput.tone || undefined,
       })
-      if (res.results) results.value = res.results
+      console.log('[COPYWRITING-VUE] generate returned:', JSON.stringify({ hasResults: !!genRes?.results, count: genRes?.results?.length }))
+      if (genRes.results) results.value = genRes.results
     }
     refreshLicense()
   } catch (e: any) {
+    console.log('[COPYWRITING-VUE] pipeline error:', e.message)
     const msg = e.message || '操作失败'
     if (msg.startsWith('DAILY_LIMIT:')) {
       pipelineError.value = msg.replace('DAILY_LIMIT:', '')
@@ -467,13 +484,21 @@ async function refreshLicense() {
       if (status.trialRemaining) {
         trialRemaining.value = status.trialRemaining.copywriting ?? 2
       }
-      try {
-        const usage = await (window as any).electronAPI.license.getDailyUsage()
-        dailyRemaining.value = Math.max(0, 2 - ((usage as any).copywritingUses ?? 0))
-      } catch {}
+      // Premium 不显示次数限制
+      if (status.tier === 'premium' || status.tier === 'pro') {
+        dailyRemaining.value = -1
+      } else {
+        try {
+          const usage = await (window as any).electronAPI.license.getDailyUsage()
+          dailyRemaining.value = Math.max(0, 2 - ((usage as any).copywritingUses ?? 0))
+        } catch {}
+      }
     }
   } catch {}
 }
+
+// 激活后刷新
+window.addEventListener('license:activated', () => refreshLicense())
 
 // ==================== Lifecycle ====================
 
