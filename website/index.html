@@ -8,10 +8,9 @@
 <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23FDC941'/><path d='M6 4L16 12L6 20V4Z' fill='%23000' opacity='.9'/><path d='M16 12L26 4V20L16 12Z' fill='%23000' opacity='.6'/></svg>">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth;background:#000;color:#fff;font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+html{scroll-behavior:smooth;background:#0A0800;color:#fff;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
 body{overflow-x:hidden}
 
-/* Hero */
 .hero{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 24px 80px;overflow:hidden}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 30%,#1A1508 0%,#0A0800 40%,#000 100%)}
 .hero-glow{position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(253,201,65,.12) 0%,transparent 70%);top:10%;left:50%;transform:translateX(-50%);pointer-events:none}
@@ -28,14 +27,12 @@ h1 span{background:linear-gradient(135deg,#FDC941,#FFF 60%);-webkit-background-c
 .btn-outline:hover{background:rgba(255,255,255,.1);border-color:rgba(253,201,65,.3)}
 .version{color:#555;font-size:13px;margin-top:14px;position:relative;z-index:1}
 
-/* Sections */
 section{padding:100px 24px}
 .section-inner{max-width:1100px;margin:0 auto}
 .section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:#FDC941;margin-bottom:12px}
 h2{font-size:clamp(28px,4vw,42px);font-weight:800;letter-spacing:-.01em;line-height:1.2;margin-bottom:16px}
 .section-desc{color:#AAA;font-size:17px;max-width:600px;line-height:1.7;margin-bottom:48px}
 
-/* Features Grid */
 .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
 .feature-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:20px;padding:32px;transition:all .3s}
 .feature-card:hover{border-color:rgba(253,201,65,.2);background:rgba(253,201,65,.03);transform:translateY(-2px)}
@@ -43,7 +40,6 @@ h2{font-size:clamp(28px,4vw,42px);font-weight:800;letter-spacing:-.01em;line-hei
 .feature-card h3{font-size:18px;font-weight:700;margin-bottom:8px}
 .feature-card p{color:#AAA;font-size:14px;line-height:1.65}
 
-/* Pricing */
 .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
 .pricing-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:20px;padding:36px;text-align:center;transition:all .3s;position:relative}
 .pricing-card.highlight{border-color:rgba(253,201,65,.3);background:rgba(253,201,65,.04)}
@@ -56,28 +52,25 @@ h2{font-size:clamp(28px,4vw,42px);font-weight:800;letter-spacing:-.01em;line-hei
 .pricing-features li::before{content:'✓';color:#FDC941;font-weight:700}
 .saving-badge{display:inline-block;margin-top:8px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#00C853;background:rgba(0,200,83,.1)}
 
-/* Download Section */
 .download-section{text-align:center;background:radial-gradient(ellipse 80% 60% at 50% 50%,#1A1508 0%,#000 80%)}
 .download-stats{display:flex;justify-content:center;gap:48px;margin:36px 0;flex-wrap:wrap}
 .stat{text-align:center}
 .stat-num{font-size:36px;font-weight:800;color:#FDC941}
 .stat-label{font-size:13px;color:#AAA;margin-top:4px}
 
-/* Feature Table */
-.compare-table{width:100%;border-collapse:collapse;font-size:14px}
+.compare-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.compare-table{width:100%;min-width:600px;border-collapse:collapse;font-size:14px}
 .compare-table th,.compare-table td{padding:12px 16px;text-align:center}
 .compare-table th{color:#AAA;font-weight:600;font-size:13px}
-.compare-table th:first-child,.compare-table td:first-child{text-align:left}
+.compare-table th:first-child,.compare-table td:first-child{text-align:left;position:sticky;left:0;background:#0A0800;z-index:1}
+.compare-table thead th:first-child{background:#191510}
+.compare-table tbody td:first-child{background:rgba(10,8,0,.95)}
 .compare-table td{color:#CCC;border-top:1px solid rgba(255,255,255,.06)}
 .compare-table .col-free{color:#888}
 .compare-table .col-premium{background:rgba(253,201,65,.03)}
 
-/* Footer */
 footer{padding:40px 24px;text-align:center;border-top:1px solid rgba(255,255,255,.06);color:#555;font-size:13px}
-footer a{color:#AAA;text-decoration:none}
-footer a:hover{color:#FDC941}
 
-/* Mobile */
 @media(max-width:640px){
   .hero{padding:80px 16px 60px}
   section{padding:60px 16px}
@@ -85,20 +78,20 @@ footer a:hover{color:#FDC941}
   .pricing-grid{grid-template-columns:1fr}
   .compare-table{font-size:12px}
   .compare-table th,.compare-table td{padding:8px 10px}
+  .download-stats{gap:24px}
 }
 
-/* Anim */
 @keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 .anim-up{animation:fadeUp .6s ease-out forwards}
 .anim-up:nth-child(2){animation-delay:.15s}
 .anim-up:nth-child(3){animation-delay:.3s}
-.fade-in{opacity:0;transform:translateY(30px);transition:all .8s ease-out}
+.fade-in{opacity:0;transform:translateY(30px);transition:opacity .6s ease-out,transform .6s ease-out;will-change:opacity,transform}
 .fade-in.visible{opacity:1;transform:translateY(0)}
 </style>
 </head>
 <body>
 
-<!-- Hero -->
+<!-- ====== Hero ====== -->
 <section class="hero">
   <div class="hero-glow"></div>
   <div class="logo anim-up">
@@ -113,58 +106,33 @@ footer a:hover{color:#FDC941}
     </a>
     <a href="#pricing" class="btn btn-outline">查看方案</a>
   </div>
-  <p class="version anim-up" id="latest-version">最新版本：加载中...</p>
+  <p class="version" id="latest-version">最新版本：v1.5.1</p>
 </section>
 
-<!-- Features -->
+<!-- ====== Features ====== -->
 <section id="features">
   <div class="section-inner">
     <p class="section-label fade-in">功能</p>
     <h2 class="fade-in">一站式视频创作工具箱</h2>
     <p class="section-desc fade-in">从视频下载到字幕生成再到 AI 文案创作，覆盖内容创作者的全流程需求。</p>
     <div class="features">
-      <div class="feature-card fade-in">
-        <div class="feature-icon">📥</div>
-        <h3>全平台视频下载</h3>
-        <p>支持抖音、快手、YouTube、B站、小红书等 1000+ 网站。自动解析最高画质，多音轨字幕可选，批量下载。</p>
-      </div>
-      <div class="feature-card fade-in">
-        <div class="feature-icon">🎙️</div>
-        <h3>智能语音识别</h3>
-        <p>拖入视频/音频即可自动生成字幕。内置 Bcut、剪映、快手三大 ASR 引擎，支持 SRT / TXT / ASS 多格式导出。</p>
-      </div>
-      <div class="feature-card fade-in">
-        <div class="feature-icon">✍️</div>
-        <h3>AI 文案改写</h3>
-        <p>粘贴千川文案 → AI 分析优化 → 输出痛点型 / 场景型 / 人群共鸣型三条改版。保留核心结构，优化表达与合规。</p>
-      </div>
-      <div class="feature-card fade-in">
-        <div class="feature-icon">🤖</div>
-        <h3>AI 文案生成</h3>
-        <p>输入产品信息、目标人群、核心卖点 → AI 生成三条原创千川文案。策略 → 撰写 → 审校，多步流水线。</p>
-      </div>
-      <div class="feature-card fade-in">
-        <div class="feature-icon">🏠</div>
-        <h3>本地大模型 · 一键配置</h3>
-        <p>点击"一键配置本地模型"，自动安装 Ollama + 下载 qwen3:4b 中文大模型。完全离线运行，无需 API Key，永久免费。</p>
-      </div>
-      <div class="feature-card fade-in">
-        <div class="feature-icon">🔒</div>
-        <h3>隐私安全</h3>
-        <p>本地模型所有数据留在你的电脑上。云端 AI 接口可选，按需切换。不上传任何用户数据到第三方服务器。</p>
-      </div>
+      <div class="feature-card fade-in"><div class="feature-icon">📥</div><h3>全平台视频下载</h3><p>支持抖音、快手、YouTube、B站、小红书等 1000+ 网站。自动解析最高画质，多音轨字幕可选，批量下载。</p></div>
+      <div class="feature-card fade-in"><div class="feature-icon">🎙️</div><h3>智能语音识别</h3><p>拖入视频/音频即可自动生成字幕。内置 Bcut、剪映、快手三大 ASR 引擎，支持 SRT / TXT / ASS 多格式导出。</p></div>
+      <div class="feature-card fade-in"><div class="feature-icon">✍️</div><h3>AI 文案改写</h3><p>粘贴千川文案 → AI 分析优化 → 输出痛点型 / 场景型 / 人群共鸣型三条改版。保留核心结构，优化表达与合规。</p></div>
+      <div class="feature-card fade-in"><div class="feature-icon">🤖</div><h3>AI 文案生成</h3><p>输入产品信息、目标人群、核心卖点 → AI 生成三条原创千川文案。策略 → 撰写 → 审校，多步流水线。</p></div>
+      <div class="feature-card fade-in"><div class="feature-icon">🏠</div><h3>本地大模型 · 一键配置</h3><p>点击"一键配置本地模型"，自动安装 Ollama + 下载 qwen3:4b 中文大模型。完全离线运行，无需 API Key，永久免费。</p></div>
+      <div class="feature-card fade-in"><div class="feature-icon">🔒</div><h3>隐私安全</h3><p>本地模型所有数据留在你的电脑上。云端 AI 接口可选，按需切换。不上传任何用户数据到第三方服务器。</p></div>
     </div>
   </div>
 </section>
 
-<!-- Pricing -->
+<!-- ====== Pricing ====== -->
 <section id="pricing" style="background:rgba(255,255,255,.01)">
   <div class="section-inner">
     <p class="section-label fade-in">方案</p>
     <h2 class="fade-in">简单透明的定价</h2>
     <p class="section-desc fade-in">免费版即可使用核心功能。升级 Premium 解锁无限次数 + 全部引擎 + AI 高级功能。</p>
 
-    <!-- Main pricing cards: Free + 月付 -->
     <div class="pricing-grid" style="max-width:700px;margin:0 auto 24px">
       <div class="pricing-card fade-in">
         <h3 style="font-size:20px">免费版</h3>
@@ -188,69 +156,30 @@ footer a:hover{color:#FDC941}
           <li>全部 3 个 ASR 引擎</li>
           <li>SRT / TXT / ASS 全格式</li>
           <li>无限次 AI 文案创作</li>
-          <li>批量处理</li>
-          <li>持续更新 + 优先支持</li>
+          <li>批量处理 · 持续更新 · 优先支持</li>
         </ul>
-        <a href="https://github.com/xingxuanyu18-web/Videobox/releases/latest" class="btn btn-primary" style="width:100%;justify-content:center">下载后订阅</a>
+        <a href="#download" class="btn btn-primary" style="width:100%;justify-content:center">下载后订阅</a>
       </div>
     </div>
 
-    <!-- 超值订阅档位 -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;max-width:900px;margin:0 auto">
-      <div class="pricing-card fade-in">
-        <h3 style="font-size:16px">季付</h3>
-        <div class="price">¥49.9<sub>/季</sub></div>
-        <p class="price-desc">≈¥16.6/月</p>
-        <div class="saving-badge">省 ¥9.8</div>
-        <ul class="pricing-features" style="margin-top:12px">
-          <li>90 天 Premium 权益</li>
-          <li>与月付功能完全一致</li>
-        </ul>
-        <a href="https://github.com/xingxuanyu18-web/Videobox/releases/latest" class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;margin-top:8px">下载后订阅</a>
-      </div>
-      <div class="pricing-card fade-in">
-        <h3 style="font-size:16px">半年付</h3>
-        <div class="price">¥79.9<sub>/半年</sub></div>
-        <p class="price-desc">≈¥13.3/月</p>
-        <div class="saving-badge">省 ¥39.5</div>
-        <ul class="pricing-features" style="margin-top:12px">
-          <li>180 天 Premium 权益</li>
-          <li>与月付功能完全一致</li>
-        </ul>
-        <a href="https://github.com/xingxuanyu18-web/Videobox/releases/latest" class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;margin-top:8px">下载后订阅</a>
-      </div>
-      <div class="pricing-card highlight fade-in">
-        <h3 style="font-size:16px">年付 ⭐ 最划算</h3>
-        <div class="price">¥119.9<sub>/年</sub></div>
-        <p class="price-desc">≈¥10.0/月</p>
-        <div class="saving-badge">省 ¥118.9</div>
-        <ul class="pricing-features" style="margin-top:12px">
-          <li>365 天 Premium 权益</li>
-          <li>与月付功能完全一致</li>
-        </ul>
-        <a href="https://github.com/xingxuanyu18-web/Videobox/releases/latest" class="btn btn-primary" style="width:100%;justify-content:center;font-size:13px;margin-top:8px">下载后订阅</a>
-      </div>
+      <div class="pricing-card fade-in"><h3 style="font-size:16px">季付</h3><div class="price">¥49.9<sub>/季</sub></div><p class="price-desc">≈¥16.6/月</p><div class="saving-badge">省 ¥9.8</div><ul class="pricing-features" style="margin-top:12px"><li>90 天 Premium 权益</li><li>与月付功能完全一致</li></ul><a href="#download" class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;margin-top:8px">下载后订阅</a></div>
+      <div class="pricing-card fade-in"><h3 style="font-size:16px">半年付</h3><div class="price">¥79.9<sub>/半年</sub></div><p class="price-desc">≈¥13.3/月</p><div class="saving-badge">省 ¥39.5</div><ul class="pricing-features" style="margin-top:12px"><li>180 天 Premium 权益</li><li>与月付功能完全一致</li></ul><a href="#download" class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;margin-top:8px">下载后订阅</a></div>
+      <div class="pricing-card highlight fade-in"><h3 style="font-size:16px">年付 ⭐ 最划算</h3><div class="price">¥119.9<sub>/年</sub></div><p class="price-desc">≈¥10.0/月</p><div class="saving-badge">省 ¥118.9</div><ul class="pricing-features" style="margin-top:12px"><li>365 天 Premium 权益</li><li>与月付功能完全一致</li></ul><a href="#download" class="btn btn-primary" style="width:100%;justify-content:center;font-size:13px;margin-top:8px">下载后订阅</a></div>
     </div>
   </div>
 </section>
 
-<!-- Feature Comparison -->
+<!-- ====== Feature Comparison ====== -->
 <section id="compare" style="background:rgba(255,255,255,.01)">
   <div class="section-inner">
     <p class="section-label fade-in">对比</p>
     <h2 class="fade-in">功能对比</h2>
     <p class="section-desc fade-in">所有 Premium 方案功能一致，仅价格与时长不同。</p>
-    <div style="overflow-x:auto">
+    <div class="compare-wrap">
       <table class="compare-table">
         <thead>
-          <tr>
-            <th>功能</th>
-            <th class="col-free">免费版</th>
-            <th class="col-premium">月付 ¥19.9</th>
-            <th class="col-premium">季付 ¥49.9</th>
-            <th class="col-premium">半年付 ¥79.9</th>
-            <th class="col-premium">年付 ¥119.9</th>
-          </tr>
+          <tr><th>功能</th><th class="col-free">免费版</th><th class="col-premium">月付 ¥19.9</th><th class="col-premium">季付 ¥49.9</th><th class="col-premium">半年付 ¥79.9</th><th class="col-premium">年付 ¥119.9</th></tr>
         </thead>
         <tbody>
           <tr><td>视频下载</td><td class="col-free">3次/日 · 720p</td><td>无限 · 4K</td><td>无限 · 4K</td><td>无限 · 4K</td><td>无限 · 4K</td></tr>
@@ -260,86 +189,41 @@ footer a:hover{color:#FDC941}
           <tr><td>AI 文案改写</td><td class="col-free">2次/日</td><td>无限</td><td>无限</td><td>无限</td><td>无限</td></tr>
           <tr><td>AI 文案生成</td><td class="col-free">2次/日</td><td>无限</td><td>无限</td><td>无限</td><td>无限</td></tr>
           <tr><td>本地大模型</td><td class="col-free">✓ 免费</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-          <tr><td>AI 字幕优化</td><td class="col-free">—</td><td>50次/月</td><td>50次/月</td><td>50次/月</td><td>50次/月</td></tr>
-          <tr><td>AI 翻译</td><td class="col-free">—</td><td>30次/月</td><td>30次/月</td><td>30次/月</td><td>30次/月</td></tr>
           <tr><td>设备授权</td><td class="col-free">不限</td><td>3 台</td><td>3 台</td><td>3 台</td><td>3 台</td></tr>
           <tr><td>版本更新</td><td class="col-free">基础</td><td>持续</td><td>持续</td><td>持续</td><td>持续</td></tr>
         </tbody>
       </table>
     </div>
-    <p style="text-align:center;color:#666;font-size:12px;margin-top:16px">季付省 ¥9.8 · 半年付省 ¥39.5 · 年付省 ¥118.9 · 所有 Premium 方案到期后自动降为免费版</p>
+    <p style="text-align:center;color:#666;font-size:12px;margin-top:16px">季付省 ¥9.8 · 半年付省 ¥39.5 · 年付省 ¥118.9 · 所有 Premium 到期后自动降为免费版</p>
   </div>
 </section>
 
-<!-- Download -->
+<!-- ====== Download ====== -->
 <section id="download" class="download-section">
   <div class="section-inner">
     <p class="section-label fade-in">下载</p>
     <h2 class="fade-in">开始使用 Videobox</h2>
     <p class="section-desc fade-in" style="margin:0 auto 0">支持 Windows 10/11 · 64 位 · 免费下载</p>
     <div class="download-stats fade-in">
-      <div class="stat"><div class="stat-num" id="file-size">~80 MB</div><div class="stat-label">安装包大小</div></div>
-      <div class="stat"><div class="stat-num">v<span id="ver-num">1.5</span></div><div class="stat-label">最新版本</div></div>
+      <div class="stat"><div class="stat-num">~80 MB</div><div class="stat-label">安装包大小</div></div>
+      <div class="stat"><div class="stat-num">v1.5.1</div><div class="stat-label">最新版本</div></div>
       <div class="stat"><div class="stat-num">Win</div><div class="stat-label">支持平台</div></div>
     </div>
     <div class="hero-btns fade-in" style="margin-top:20px;flex-direction:column;align-items:center;gap:12px">
-      <a id="dl-btn-gitee" href="https://gitee.com/xing-xuanyu/videobox-releases/releases/download/v1.5.1/Videobox.Setup.1.5.1.exe" class="btn btn-primary" style="font-size:17px;padding:16px 40px">
+      <a href="https://gitee.com/xing-xuanyu/videobox-releases/releases/download/v1.5.1/Videobox.Setup.1.5.1.exe" class="btn btn-primary" style="font-size:17px;padding:16px 40px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
         下载 Windows 安装包（国内高速）
       </a>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-        <a id="dl-btn" href="https://github.com/xingxuanyu18-web/Videobox/releases/download/v1.5.1/Videobox.Setup.1.5.1.exe" class="btn btn-outline" style="font-size:13px;padding:10px 20px">GitHub 下载</a>
-        <a id="dl-mirror1" href="https://ghfast.top/https://github.com/xingxuanyu18-web/Videobox/releases/download/v1.5.1/Videobox.Setup.1.5.1.exe" class="btn btn-outline" style="font-size:13px;padding:10px 20px">🚀 镜像加速一</a>
-        <a id="dl-mirror2" href="https://ghproxy.net/https://github.com/xingxuanyu18-web/Videobox/releases/download/v1.5.1/Videobox.Setup.1.5.1.exe" class="btn btn-outline" style="font-size:13px;padding:10px 20px">🚀 镜像加速二</a>
-      </div>
     </div>
-    <p class="version fade-in" style="margin-top:16px">安装后打开应用可自动检测更新</p>
+    <p class="version fade-in" style="margin-top:16px">安装后打开应用可自动检测更新 · 无需重新下载</p>
   </div>
 </section>
 
 <footer>
-  <p>© 2026 Videobox Team · <a href="https://github.com/xingxuanyu18-web/Videobox">GitHub</a> · 全平台视频下载 + 智能字幕 + AI 文案创作 · 本地大模型一键配置</p>
+  <p>© 2026 Videobox Team · 全平台视频下载 + 智能字幕 + AI 文案创作 · 本地大模型一键配置</p>
 </footer>
 
 <script>
-// 下载镜像列表
-const MIRRORS = ['https://ghfast.top/', 'https://ghproxy.net/']
-// Gitee 仓库配置（需要与 scripts/gitee-upload.js 中保持一致）
-const GITEE_OWNER = 'xing-xuanyu'
-const GITEE_REPO = 'videobox-releases'
-const GITEE_BASE = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download`
-
-// 从 GitHub API 获取最新版本，动态更新所有下载链接
-(async()=>{
-  try{
-    const ctrl=new AbortController()
-    const timeout=setTimeout(()=>ctrl.abort(),5000)
-    const r=await fetch('https://api.github.com/repos/xingxuanyu18-web/Videobox/releases/latest',{signal:ctrl.signal})
-    clearTimeout(timeout)
-    if(!r.ok)throw new Error('API rate limited or unavailable')
-    const d=await r.json()
-    const ver=d.tag_name.replace('v','')
-    const filename = d.assets?.find(a=>a.name.endsWith('.exe'))?.name || `Videobox.Setup.${ver}.exe`
-    document.getElementById('latest-version').textContent='最新版本：v'+ver+' (在线)'
-    document.getElementById('ver-num').textContent=ver
-    const exe=d.assets.find(a=>a.name.endsWith('.exe'))
-    if(exe){
-      const ghUrl=exe.browser_download_url
-      document.getElementById('dl-btn').href=ghUrl
-      document.getElementById('dl-mirror1').href=MIRRORS[0]+ghUrl
-      document.getElementById('dl-mirror2').href=MIRRORS[1]+ghUrl
-      document.getElementById('file-size').textContent='~'+Math.round(exe.size/1024/1024)+' MB'
-    }
-    // Gitee 链接（和 GitHub release 版本同步）
-    const giteeUrl = `${GITEE_BASE}/v${ver}/${filename}`
-    const giteeBtn = document.getElementById('dl-btn-gitee')
-    if (giteeBtn) giteeBtn.href = giteeUrl
-  }catch(e){
-    document.getElementById('latest-version').textContent='最新版本：v1.5.1'
-    console.warn('GitHub API 不可用，使用硬编码下载链接:',e.message)
-  }
-})()
-
 // Scroll animations
 const obs=new IntersectionObserver((entries)=>{
   entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})
@@ -350,7 +234,8 @@ document.querySelectorAll('.fade-in').forEach(el=>obs.observe(el))
 document.querySelectorAll('a[href^="#"]').forEach(a=>{
   a.addEventListener('click',e=>{
     e.preventDefault()
-    document.querySelector(a.getAttribute('href')).scrollIntoView({behavior:'smooth'})
+    const el=document.querySelector(a.getAttribute('href'))
+    if(el)el.scrollIntoView({behavior:'smooth'})
   })
 })
 </script>

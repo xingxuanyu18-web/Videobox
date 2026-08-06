@@ -54,17 +54,20 @@ export default {
         case '/api/health': return handleHealth(store)
       }
 
-      // Non-API paths: serve landing page HTML from KV (if configured) or redirect
+      // Non-API paths: serve landing page HTML from KV
       if (env.VIDEOBOX_SITE_HTML) {
-        return new Response(env.VIDEOBOX_SITE_HTML, {
-          headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
-        })
+        const html = await env.VIDEOBOX_SITE_HTML.get('site-html', 'text')
+        if (html) {
+          return new Response(html, {
+            headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
+          })
+        }
       }
 
-      // Fallback: redirect to GitHub
-      return new Response(null, {
-        status: 302,
-        headers: { Location: 'https://github.com/xingxuanyu18-web/Videobox', ...CORS_HEADERS },
+      // Fallback: site not configured
+      return new Response('Videobox API is running. Visit /api/health for status.', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', ...CORS_HEADERS },
       })
     } catch (e) {
       console.error('Unhandled error:', e)
@@ -276,5 +279,6 @@ async function handleHealth(store: ActivationStore | null): Promise<Response> {
 
 interface Env {
   VIDEOBOX_ACTIVATIONS?: KVNamespace
+  VIDEOBOX_SITE_HTML?: KVNamespace
   LICENSE_SECRET?: string
 }
