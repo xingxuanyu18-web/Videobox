@@ -262,12 +262,7 @@ autoUpdater.setFeedURL({
 })
 autoUpdater.autoDownload = false  // 手动下载，走镜像加速
 
-// Gitee 国内仓库（下载最快）
-const GITEE_OWNER = 'xing-xuanyu'
-const GITEE_REPO = 'videobox-releases'
-const GITEE_DOWNLOAD_BASE = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download`
-
-// 下载地址优先级：Gitee > 镜像 > GitHub 官方
+// GitHub 加速镜像列表（ghfast.top 优先）
 const DOWNLOAD_MIRRORS = [
   'https://ghfast.top/',
   'https://ghproxy.net/',
@@ -349,17 +344,13 @@ async function downloadUpdateWithMirrors(version: string) {
   const mirrorConfig = loadMirrorConfig()
   const filename = `Videobox.Setup.${version}.exe`
   const githubUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/${filename}`
-  const giteeUrl = `${GITEE_DOWNLOAD_BASE}/v${version}/${filename}`
 
-  // 构建 URL 列表（ghfast.top 优先 → 镜像 → GitHub 兜底）
-  // 注意：Gitee 有 100MB 附件限制，已移除
+  // 构建 URL 列表（GitHub 优先 → 国内镜像兜底）
   const urls: { url: string; label: string }[] = []
-  urls.push({ url: `https://ghfast.top/${githubUrl}`, label: 'ghfast.top 镜像' })
+  urls.push({ url: githubUrl, label: 'GitHub' })
   if (mirrorConfig.enabled) {
-    urls.push({ url: `https://ghproxy.net/${githubUrl}`, label: 'ghproxy.net 镜像' })
-    urls.push({ url: `https://mirror.ghproxy.com/${githubUrl}`, label: 'mirror.ghproxy.com 镜像' })
+    DOWNLOAD_MIRRORS.forEach(m => urls.push({ url: m + githubUrl, label: m.replace('https://', '').replace('/', '') }))
   }
-  urls.push({ url: githubUrl, label: 'GitHub 官方' })
 
   for (const { url, label } of urls) {
     console.log(`[Update] Trying ${label}: ${url}`)
@@ -528,11 +519,10 @@ app.whenReady().then(async () => {
         const currentVersion = app.getVersion()
         if (latestVersion && latestVersion !== currentVersion) {
           const githubUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${latestVersion}/Videobox.Setup.${latestVersion}.exe`
-          const giteeUrl = `${GITEE_DOWNLOAD_BASE}/v${latestVersion}/Videobox.Setup.${latestVersion}.exe`
           lastUpdateCheckResult = {
             hasUpdate: true, version: latestVersion, currentVersion,
             releaseNotes: data.body || '', releaseDate: data.published_at || '',
-            downloadUrl: giteeUrl,
+            downloadUrl: githubUrl,
             mirrorUrl: `https://ghfast.top/${githubUrl}`,
           }
           win?.webContents.send('update:status', { status: 'available', version: latestVersion, releaseNotes: data.body || '' })
@@ -587,8 +577,8 @@ ipcMain.handle('app:checkForUpdates', async () => {
       currentVersion,
       releaseNotes: data.body || '',
       releaseDate: data.published_at || '',
-      downloadUrl: `https://ghfast.top/${githubUrl}`,
-      mirrorUrl: githubUrl,
+      downloadUrl: githubUrl,
+      mirrorUrl: `https://ghfast.top/${githubUrl}`,
     }
 
     // 触发镜像下载（不依赖 autoUpdater）
