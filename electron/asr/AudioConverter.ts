@@ -4,11 +4,7 @@
 
 import * as path from 'path'
 import * as fs from 'fs'
-import { spawn } from 'child_process'
-import { fileURLToPath } from 'url'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { spawn, execSync } from 'child_process'
 
 const AUDIO_EXTS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aac', '.wma']
 const VIDEO_EXTS = ['.mp4', '.avi', '.mov', '.ts', '.mkv', '.wmv', '.flv', '.webm', '.rmvb']
@@ -26,28 +22,31 @@ export function isVideoFile(filePath: string): boolean {
 export function getFfmpegPath(): string {
   const isWin = process.platform === 'win32'
   const ffmpegName = isWin ? 'ffmpeg.exe' : 'ffmpeg'
-
-  // resourcesPath 在打包后指向 resources/ 目录（extraResources 内容在此）
   const resourcesPath = process.resourcesPath || ''
+  const appRoot = process.env.APP_ROOT || process.cwd()
 
   const possiblePaths = [
     path.join(resourcesPath, ffmpegName),
     path.join(resourcesPath, 'app.asar.unpacked', ffmpegName),
-    path.join(process.env.APP_ROOT || '', ffmpegName),
+    path.join(appRoot, ffmpegName),
+    path.join(appRoot, '..', '..', ffmpegName),
     path.join(process.cwd(), ffmpegName),
-    ffmpegName
+    path.join(process.cwd(), '..', '..', ffmpegName),
+    ffmpegName,
   ]
 
-  console.log('[FFmpeg] Searching paths:', possiblePaths.slice(0, 3))
   for (const p of possiblePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        console.log('[FFmpeg] Found:', p)
-        return p
-      }
-    } catch { /* skip */ }
+    try { if (fs.existsSync(p)) return p } catch {}
   }
-  console.error('[FFmpeg] NOT FOUND, searched:', possiblePaths)
+
+  try {
+    const cmd = isWin ? 'where ffmpeg 2>nul' : 'which ffmpeg 2>/dev/null'
+    const result = execSync(cmd, { encoding: 'utf8', timeout: 5000 }).trim()
+    if (result && fs.existsSync(result.split('\n')[0].trim())) {
+      return result.split('\n')[0].trim()
+    }
+  } catch {}
+
   return ffmpegName
 }
 

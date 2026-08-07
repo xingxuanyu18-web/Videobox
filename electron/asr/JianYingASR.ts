@@ -96,17 +96,20 @@ export class JianYingASR extends BaseASR {
     const data = { url, current_time: currentTime, pf, appvr, tdid: this.tdid }
 
     try {
+      console.log('[JianYingASR] sign request to bkfeng.top...')
       const resp = await fetch('https://asrtools-update.bkfeng.top/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       })
+      console.log('[JianYingASR] sign response:', resp.status, resp.statusText)
       if (!resp.ok) throw new Error(`Sign request failed: ${resp.status}`)
       const respData = await resp.json()
       const sign = respData.sign
       if (!sign) throw new Error("No 'sign' in response")
       return [sign.toLowerCase(), currentTime]
     } catch (e) {
+      console.error('[JianYingASR] sign FAILED:', e)
       throw new Error(`Sign generation failed: ${e}`)
     }
   }
@@ -253,10 +256,34 @@ export class JianYingASR extends BaseASR {
   }
 
   async _run(): Promise<Record<string, unknown>> {
-    await this.upload()
-    const queryId = await this.submit()
-    const respData = await this.query(queryId)
-    return respData
+    console.log('[JianYingASR] Step 1/4: upload...')
+    try {
+      await this.upload()
+      console.log('[JianYingASR] upload done, storeUri=', this.storeUri)
+    } catch (e: any) {
+      console.error('[JianYingASR] upload FAILED:', e.message, e.stack)
+      throw e
+    }
+
+    console.log('[JianYingASR] Step 2/4: submit...')
+    let queryId: string
+    try {
+      queryId = await this.submit()
+      console.log('[JianYingASR] submit done, queryId=', queryId)
+    } catch (e: any) {
+      console.error('[JianYingASR] submit FAILED:', e.message, e.stack)
+      throw e
+    }
+
+    console.log('[JianYingASR] Step 3/4: query...')
+    try {
+      const respData = await this.query(queryId)
+      console.log('[JianYingASR] query done, hasData=', !!respData?.data)
+      return respData
+    } catch (e: any) {
+      console.error('[JianYingASR] query FAILED:', e.message, e.stack)
+      throw e
+    }
   }
 
   _makeSegments(respData: Record<string, unknown>): ASRDataSeg[] {

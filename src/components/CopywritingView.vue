@@ -202,23 +202,86 @@
       <!-- === List View === -->
       <template v-else>
         <!-- Pipeline Progress -->
-        <div v-if="isProcessing || pipelineSteps.length > 0" class="px-5 py-4 border-b border-border-subtle">
-          <h3 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">执行进度</h3>
-          <div class="flex flex-col gap-1.5">
-            <div
-              v-for="step in pipelineSteps"
-              :key="step.step"
-              class="flex items-center gap-2.5 text-sm"
-            >
-              <span v-if="step.status === 'completed'" class="material-symbols-outlined text-[16px] text-success">check_circle</span>
-              <span v-else-if="step.status === 'running'" class="material-symbols-outlined text-[16px] text-primary animate-spin">sync</span>
-              <span v-else-if="step.status === 'error'" class="material-symbols-outlined text-[16px] text-error">error</span>
-              <span v-else class="material-symbols-outlined text-[16px] text-text-muted">radio_button_unchecked</span>
-              <span :class="step.status === 'running' ? 'text-primary font-medium' : step.status === 'error' ? 'text-error' : 'text-text-secondary'">{{ step.message }}</span>
-            </div>
+        <div v-if="isProcessing || pipelineSteps.length > 0" class="px-5 py-5 border-b border-border-subtle">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-symbols-outlined text-[18px] text-primary">account_tree</span>
+            <h3 class="text-xs font-bold text-text-muted uppercase tracking-wider">执行链路</h3>
+            <span v-if="isProcessing" class="ml-auto flex items-center gap-1.5 text-2xs text-text-muted">
+              <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+              {{ activeStepLabel }}
+            </span>
           </div>
-          <div v-if="pipelineError" class="mt-3 p-3 rounded-lg bg-error-container border border-error/20">
-            <p class="text-xs text-error">{{ pipelineError }}</p>
+
+          <!-- Horizontal Pipeline -->
+          <div class="flex items-start gap-0">
+            <template v-for="(step, index) in pipelineSteps" :key="step.step">
+              <!-- Step Node -->
+              <div class="flex flex-col items-center gap-1.5 relative" :style="{ flex: '1 1 0', minWidth: '0' }">
+                <!-- Status Circle -->
+                <div
+                  class="relative flex items-center justify-center rounded-full transition-all duration-500"
+                  :class="stepCircleClass(step)"
+                >
+                  <template v-if="step.status === 'completed'">
+                    <span class="material-symbols-outlined text-white" :style="{ fontSize: stepCircleSize }">check</span>
+                    <div class="absolute inset-0 rounded-full" :class="step.status === 'completed' ? 'bg-success/20 animate-ping' : ''" style="animation-duration: 0.6s; animation-iteration-count: 1;"></div>
+                  </template>
+                  <template v-else-if="step.status === 'running'">
+                    <span class="material-symbols-outlined text-white animate-spin" :style="{ fontSize: stepCircleSize }">sync</span>
+                    <div class="absolute -inset-1 rounded-full bg-primary/20 animate-pulse"></div>
+                  </template>
+                  <template v-else-if="step.status === 'error'">
+                    <span class="material-symbols-outlined text-white" :style="{ fontSize: stepCircleSize }">close</span>
+                  </template>
+                  <template v-else>
+                    <span class="text-xs font-bold" :class="step.status === 'pending' ? 'text-text-muted' : 'text-text-disabled'" :style="{ fontSize: stepCircleFontSize }">{{ step.stepIndex }}</span>
+                  </template>
+                </div>
+
+                <!-- Step Label -->
+                <span
+                  class="text-2xs font-semibold text-center leading-tight transition-colors duration-300 px-0.5"
+                  :class="stepLabelClass(step)"
+                >{{ stepLabel(step) }}</span>
+
+                <!-- Brief status text -->
+                <span
+                  class="text-3xs text-center leading-tight transition-colors duration-300"
+                  :class="step.status === 'running' ? 'text-primary' : step.status === 'completed' ? 'text-success' : 'text-text-muted'"
+                >{{ stepSubtext(step) }}</span>
+              </div>
+
+              <!-- Arrow Connector -->
+              <div
+                v-if="index < pipelineSteps.length - 1"
+                class="flex items-center flex-shrink-0 pt-[12px]"
+                :style="{ width: '16px' }"
+              >
+                <div class="flex-1 flex items-center">
+                  <div class="flex-1 h-px rounded-full transition-colors duration-500"
+                    :class="arrowLineClass(index)"
+                  ></div>
+                  <div class="transition-colors duration-500" :class="arrowHeadClass(index)">
+                    <svg width="6" height="8" viewBox="0 0 6 8"><path d="M0 0l6 4-6 4z" fill="currentColor"/></svg>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Overall progress bar -->
+          <div class="mt-4 h-1 rounded-full bg-surface-container-highest overflow-hidden">
+            <div
+              class="h-full rounded-full transition-all duration-700 ease-out"
+              :class="progressBarClass"
+              :style="{ width: overallProgress + '%' }"
+            ></div>
+          </div>
+
+          <!-- Error Banner -->
+          <div v-if="pipelineError" class="mt-3 p-3 rounded-lg bg-error-container border border-error/20 flex items-start gap-2">
+            <span class="material-symbols-outlined text-[16px] text-error flex-shrink-0 mt-0.5">warning</span>
+            <p class="text-xs text-error leading-relaxed">{{ pipelineError }}</p>
           </div>
         </div>
 
@@ -329,12 +392,113 @@ const buttonText = computed(() => {
 // ==================== Processing State ====================
 
 const isProcessing = ref(false)
-const pipelineSteps = ref<{ step: string; status: string; message: string }[]>([])
+const pipelineSteps = ref<{ step: string; status: string; message: string; stepIndex: number; totalSteps: number }[]>([])
 const pipelineError = ref('')
 const results = ref<string[]>([])
 
 // Detail view state
 const selectedResult = ref<number | null>(null)
+
+// ==================== Pipeline Visual Helpers ====================
+
+const STEP_NAMES: Record<string, string> = {
+  analyze_original: '分析原文',
+  rewrite_strategy: '制定策略',
+  parallel_rewrites: '并行改写',
+  finalise_rewrites: '审校优化',
+  parse_results: '整理结果',
+  creative_strategy: '创意策略',
+  write_copies: '撰写文案',
+  review_optimize: '审校优化',
+}
+
+const STEP_SUBTEXTS: Record<string, string> = {
+  analyze_original: '解构文案框架与合规检查',
+  rewrite_strategy: '制定优化方向与切入点',
+  parallel_rewrites: '痛点·场景·人群三路并发',
+  finalise_rewrites: '逐条精修与合规复查',
+  parse_results: '格式化最终输出',
+  creative_strategy: '受众分析 + 钩子方案',
+  write_copies: '差异化三版并行创作',
+  review_optimize: '合规复查 + 钩子强化',
+}
+
+const stepCircleSize = '18px'
+const stepCircleFontSize = '12px'
+
+function stepLabel(step: { step: string; message: string }) {
+  return STEP_NAMES[step.step] || step.message
+}
+
+function stepSubtext(step: { step: string; status: string }) {
+  if (step.status === 'completed') return '✓ 完成'
+  if (step.status === 'running') return '执行中···'
+  if (step.status === 'error') return '失败'
+  return STEP_SUBTEXTS[step.step] || ''
+}
+
+function stepCircleClass(step: { status: string }) {
+  const base = 'w-9 h-9 flex-shrink-0 '
+  switch (step.status) {
+    case 'completed': return base + 'bg-success shadow-sm'
+    case 'running': return base + 'bg-primary shadow-glow-primary scale-110'
+    case 'error': return base + 'bg-error shadow-sm'
+    default: return base + 'bg-surface-container-highest border border-border-subtle'
+  }
+}
+
+function stepLabelClass(step: { status: string }) {
+  switch (step.status) {
+    case 'completed': return 'text-success'
+    case 'running': return 'text-primary font-bold'
+    case 'error': return 'text-error'
+    default: return 'text-text-muted'
+  }
+}
+
+function arrowLineClass(index: number) {
+  const curr = pipelineSteps.value[index]
+  const next = pipelineSteps.value[index + 1]
+  if (!curr || !next) return 'bg-border-subtle'
+  if (curr.status === 'completed' && next.status !== 'pending') return 'bg-success'
+  if (curr.status === 'completed') return 'bg-primary/50'
+  return 'bg-border-subtle'
+}
+
+function arrowHeadClass(index: number) {
+  const curr = pipelineSteps.value[index]
+  const next = pipelineSteps.value[index + 1]
+  if (!curr || !next) return 'text-border-subtle'
+  if (curr.status === 'completed' && next.status !== 'pending') return 'text-success'
+  if (curr.status === 'completed') return 'text-primary/50'
+  return 'text-border-subtle'
+}
+
+const progressBarClass = computed(() => {
+  const lastStep = pipelineSteps.value[pipelineSteps.value.length - 1]
+  if (!lastStep) return 'bg-surface-container-highest'
+  if (pipelineError.value) return 'bg-error'
+  if (lastStep.status === 'completed') return 'bg-gradient-to-r from-primary to-success'
+  if (lastStep.status === 'running') return 'bg-primary'
+  return 'bg-primary/30'
+})
+
+const overallProgress = computed(() => {
+  if (pipelineSteps.value.length === 0) return 0
+  const total = pipelineSteps.value.length
+  let progress = 0
+  for (const s of pipelineSteps.value) {
+    if (s.status === 'completed') progress += 1
+    if (s.status === 'running') progress += 0.5
+  }
+  return Math.round((progress / total) * 100)
+})
+
+const activeStepLabel = computed(() => {
+  const running = pipelineSteps.value.find(s => s.status === 'running')
+  if (!running) return ''
+  return `处理中···`
+})
 
 const selectedLabel = computed(() => {
   if (selectedResult.value === null) return ''
@@ -401,13 +565,15 @@ async function startPipeline() {
   console.log('[COPYWRITING-VUE] setting up progress listener')
   progressCleanup = (window as any).electronAPI.copywriting.onProgress(
     (data: { step: string; stepIndex: number; totalSteps: number; status: string; message: string; results?: string[]; error?: string }) => {
+      const entry = { step: data.step, status: data.status, message: data.message, stepIndex: data.stepIndex, totalSteps: data.totalSteps }
       const existingIdx = pipelineSteps.value.findIndex(s => s.step === data.step)
-      const entry = { step: data.step, status: data.status, message: data.message }
       if (existingIdx >= 0) {
         pipelineSteps.value[existingIdx] = entry
       } else {
         pipelineSteps.value.push(entry)
       }
+      // Sort by stepIndex to maintain pipeline order
+      pipelineSteps.value.sort((a, b) => a.stepIndex - b.stepIndex)
       pipelineSteps.value = [...pipelineSteps.value]
 
       if (data.results && data.results.length > 0) {
@@ -490,7 +656,7 @@ async function refreshLicense() {
       } else {
         try {
           const usage = await (window as any).electronAPI.license.getDailyUsage()
-          dailyRemaining.value = Math.max(0, 2 - ((usage as any).copywritingUses ?? 0))
+          dailyRemaining.value = Math.max(0, 2 - (usage.copywritingUses ?? 0))
         } catch {}
       }
     }

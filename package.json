@@ -1,7 +1,7 @@
 {
   "name": "videobox",
   "private": true,
-  "version": "1.5.1",
+  "version": "1.5.4",
   "type": "module",
   "description": "全平台视频下载 + 智能语音识别字幕工具",
   "author": "Videobox Team",
@@ -25,7 +25,7 @@
     "@types/node": "^25.5.0",
     "@vitejs/plugin-vue": "^5.0.4",
     "autoprefixer": "^10.4.27",
-    "electron": "^30.0.1",
+    "electron": "^30.5.1",
     "electron-builder": "^24.13.3",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.1",
@@ -99,6 +99,14 @@
       {
         "from": "./swscale-10.dll",
         "to": "./swscale-10.dll"
+      },
+      {
+        "from": "./ffplay.exe",
+        "to": "./ffplay.exe"
+      },
+      {
+        "from": "./ffprobe.exe",
+        "to": "./ffprobe.exe"
       }
     ],
     "win": {
@@ -134,5 +142,8 @@
       "repo": "Videobox",
       "releaseType": "release"
     }
+  },
+  "allowScripts": {
+    "electron@30.5.1": true
   }
 }

@@ -343,7 +343,7 @@ export async function oneClickSetup(
         onProgress?.({ step: 'downloading_installer', status: 'completed', message: '下载完成', percent: 100 })
       } catch (e: any) {
         onProgress?.({ step: 'downloading_installer', status: 'error', message: '下载失败', error: e.message })
-        return { success: false, error: `下载 Ollama 失败: ${e.message}\n请检查网络连接或手动下载: https://ollama.com/download/windows` }
+        return { success: false, error: `下载 Ollama 失败: ${e.message}\n\n请手动下载安装:\n1. 浏览器打开 https://ollama.com/download/windows\n2. 下载后双击安装\n3. 安装完成后回到此页面点击"一键配置"即可` }
       }
     }
 

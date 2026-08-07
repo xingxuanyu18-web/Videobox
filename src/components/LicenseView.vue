@@ -285,7 +285,7 @@ const selectedPlanLabel = computed(() => {
   return subscriptionPlans.find(p => p.id === selectedPlan.value)?.label || '月'
 })
 
-const ACTIVATION_PAGE_URL = 'https://videobox-api.videobox-api.workers.dev'
+const ACTIVATION_PAGE_URL = 'https://videobox-site.pages.dev'
 const deviceLabel = ref('')
 const devices = ref<Array<{ machineId: string; activatedAt: string; label: string }>>([])
 const maxDevices = ref(0)

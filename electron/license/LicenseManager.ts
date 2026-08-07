@@ -14,12 +14,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
 import * as os from 'os'
-import { net } from 'electron'
-
-// 使用 Electron net.fetch（Chromium 网络栈，走系统代理）替代 Node.js 原生 fetch
-async function proxyFetch(url: string, init: RequestInit): Promise<Response> {
-  return net.fetch(url, init) as unknown as Response
-}
+import { request, HttpResponse } from '../core/http'
 
 export type UserTier = 'trial' | 'free' | 'pro' | 'premium'
 
@@ -132,6 +127,7 @@ export class LicenseManager {
   private todayUsage: DailyUsage | null = null
 
   static ACTIVATION_SERVER = 'https://videobox-api.videobox-api.workers.dev/api'
+  static SITE_URL = 'https://videobox-site.pages.dev'
 
   constructor(userDataPath: string) {
     this.userDataPath = userDataPath
@@ -365,11 +361,12 @@ export class LicenseManager {
     }
   }
 
-  getDailyUsage(): { downloads: number; asrProcessings: number; limit: number | null } {
+  getDailyUsage(): { downloads: number; asrProcessings: number; copywritingUses: number; limit: number | null } {
     this.ensureTodayUsage()
     return {
       downloads: this.todayUsage?.downloads || 0,
       asrProcessings: this.todayUsage?.asrProcessings || 0,
+      copywritingUses: this.todayUsage?.copywritingUses || 0,
       limit: this.getDailyLimit(),
     }
   }
@@ -478,25 +475,36 @@ export class LicenseManager {
     }
   }
 
-  async activate(licenseKey: string, deviceLabel?: string): Promise<{ success: boolean; tier?: UserTier; message: string }> {
+  /**
+   * 激活许可证 — 离线优先策略
+   *   1. 先本地验证签名
+   *   2. 本地通过 → 立即激活（不等待网络）
+   *   3. 后台尝试联网验证（如果连得上）
+   */
+  async activate(licenseKey: string, deviceLabel?: string): Promise<{ success: boolean; tier?: UserTier; plan?: string; message: string }> {
     const machineId = getMachineId()
     if (!LicenseManager.isValidKeyFormat(licenseKey)) {
       return { success: false, message: '激活码格式无效' }
     }
+
+    // 1. 本地验证（优先，毫秒级完成）
+    const local = LicenseManager.verifyLocal(licenseKey)
+    if (local.valid && local.tier) {
+      const result = this.activateLocal(local.tier, machineId, licenseKey, deviceLabel, local.durationDays)
+      // 2. 后台尝试联网绑定设备（不阻塞用户）
+      this.silentServerActivate(licenseKey, machineId, deviceLabel)
+      return result
+    }
+
+    // 本地验证失败，尝试联网（可能是生产环境的 secret 不同）
     try {
-      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/activate`, {
+      const resp = await request(`${LicenseManager.ACTIVATION_SERVER}/activate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: licenseKey.trim(), machineId, deviceLabel }),
+        body: { key: licenseKey.trim(), machineId, deviceLabel },
       })
-      const data = await resp.json()
+      const data = resp.data
       if (!data.success) {
-        // 服务端拒绝，尝试本地验证兜底
-        const local = LicenseManager.verifyLocal(licenseKey)
-        if (local.valid && local.tier) {
-          return this.activateLocal(local.tier, machineId, licenseKey, deviceLabel, local.durationDays)
-        }
-        return { success: false, message: data.message || '激活失败' }
+        return { success: false, message: data.message || '激活码无效' }
       }
       const plan = data.plan || (data.tier === 'pro' ? 'pro' : 'monthly')
       this.currentLicense = {
@@ -515,17 +523,27 @@ export class LicenseManager {
       const label = LicenseManager.codeToLabel(licenseKey.trim().toUpperCase().split('-')[5] || '')
       const days = data.durationDays ?? LicenseManager.codeToDays(licenseKey.trim().toUpperCase().split('-')[5] || '')
       const suffix = data.tier === 'premium' ? ` · ${days}天` : ''
-      return { success: true, tier: data.tier, plan: plan, message: `激活成功！${label}${suffix}` }
+      return { success: true, tier: data.tier, plan, message: `激活成功！${label}${suffix}` }
     } catch {
-      if (this.currentLicense) {
-        return { success: true, tier: this.currentLicense.tier, message: '无法连接服务器，使用缓存许可证' }
+      return { success: false, message: '激活码无效，请检查后重试' }
+    }
+  }
+
+  /** 后台静默联网绑定设备（不阻塞用户，失败也不影响使用） */
+  private async silentServerActivate(licenseKey: string, machineId: string, deviceLabel?: string): Promise<void> {
+    try {
+      const resp = await request(`${LicenseManager.ACTIVATION_SERVER}/activate`, {
+        method: 'POST',
+        body: { key: licenseKey.trim(), machineId, deviceLabel },
+      })
+      const data = resp.data
+      if (data.success && this.currentLicense) {
+        this.currentLicense.serverVerified = true
+        this.currentLicense.lastVerifiedAt = new Date().toISOString()
+        this.saveLicense()
       }
-      // 服务端连不上，本地验证兜底
-      const local = LicenseManager.verifyLocal(licenseKey)
-      if (local.valid && local.tier) {
-        return this.activateLocal(local.tier, machineId, licenseKey, deviceLabel, local.durationDays)
-      }
-      return { success: false, message: '无法连接激活服务器，请检查网络后重试' }
+    } catch {
+      // 联网失败不影响使用
     }
   }
 
@@ -584,12 +602,11 @@ export class LicenseManager {
   async verifyOnline(): Promise<boolean> {
     if (!this.currentLicense?.licenseKey) return false
     try {
-      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/verify`, {
+      const resp = await request(`${LicenseManager.ACTIVATION_SERVER}/verify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ machineId: getMachineId(), licenseKey: this.currentLicense.licenseKey }),
+        body: { machineId: getMachineId(), licenseKey: this.currentLicense.licenseKey },
       })
-      const data = await resp.json()
+      const data = resp.data
       if (!data.valid) {
         if (this.currentLicense.lastVerifiedAt) {
           const lastCheck = new Date(this.currentLicense.lastVerifiedAt)
@@ -622,12 +639,11 @@ export class LicenseManager {
   async getDevices(): Promise<{ devices: DeviceInfo[]; maxDevices: number } | null> {
     if (!this.currentLicense?.licenseKey) return null
     try {
-      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/devices`, {
+      const resp = await request(`${LicenseManager.ACTIVATION_SERVER}/devices`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: this.currentLicense.licenseKey }),
+        body: { key: this.currentLicense.licenseKey },
       })
-      const data = await resp.json()
+      const data = resp.data
       if (data.success) {
         return { devices: data.devices as DeviceInfo[], maxDevices: data.maxDevices as number }
       }
@@ -647,12 +663,11 @@ export class LicenseManager {
   async deactivateDevice(machineId: string): Promise<{ success: boolean; message: string }> {
     if (!this.currentLicense?.licenseKey) return { success: false, message: '未激活' }
     try {
-      const resp = await proxyFetch(`${LicenseManager.ACTIVATION_SERVER}/deactivate-device`, {
+      const resp = await request(`${LicenseManager.ACTIVATION_SERVER}/deactivate-device`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: this.currentLicense.licenseKey, machineId }),
+        body: { key: this.currentLicense.licenseKey, machineId },
       })
-      const data = await resp.json()
+      const data = resp.data
       return { success: data.success, message: data.message || '' }
     } catch { return { success: false, message: '无法连接服务器' } }
   }
